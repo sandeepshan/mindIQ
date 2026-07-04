@@ -338,6 +338,23 @@
   .shape-grid svg{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);}
   .arrow-sep{color:var(--text-dim); font-size:20px;}
 
+  /* --- odd-one-out shape question --- */
+  .odd-options{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .odd-option{justify-content:center; padding:18px;}
+  .odd-option svg{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);}
+
+  /* --- 2x2 matrix analogy grid --- */
+  .matrix-grid{
+    display:grid; grid-template-columns:repeat(2, 84px); grid-template-rows:repeat(2, 84px);
+    gap:2px; background:var(--border); border:1px solid var(--border);
+    margin:22px auto; width:max-content; border-radius:var(--radius); overflow:hidden;
+  }
+  .matrix-cell{background:var(--surface-2); display:flex; align-items:center; justify-content:center;}
+  .matrix-cell.placeholder{font-family:'IBM Plex Mono',monospace; font-size:26px; color:var(--text-dim);}
+
+  /* --- counting-puzzle image above mcq options --- */
+  .mcq-image{display:flex; justify-content:center; margin-bottom:22px;}
+
   .memory-display{
     font-family:'IBM Plex Mono',monospace;
     font-size:46px;
@@ -780,6 +797,8 @@
        plus arrows fit on one line without wrapping awkwardly */
     .shape-grid{gap:10px;}
     .shape-grid svg{transform:scale(0.82);}
+    .matrix-grid{grid-template-columns:repeat(2, 68px); grid-template-rows:repeat(2, 68px);}
+    .odd-option{padding:12px;}
 
     /* buttons stack cleanly rather than fighting for width */
     .actions{flex-direction:column;}
@@ -1046,103 +1065,240 @@ function categoryIcon(cat, size=16){
   return `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${paths[cat]||''}</svg>`;
 }
 
+/* ---------- Custom SVG images for spatial counting puzzles ---------- */
+function gridSquaresSVG(n){
+  const unit = 40, size = unit*n;
+  let lines = '';
+  for(let i=0;i<=n;i++){
+    lines += `<line x1="0" y1="${i*unit}" x2="${size}" y2="${i*unit}" stroke="var(--accent)" stroke-width="2"/>`;
+    lines += `<line x1="${i*unit}" y1="0" x2="${i*unit}" y2="${size}" stroke="var(--accent)" stroke-width="2"/>`;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;">${lines}</svg>`;
+}
+function triangleMidpointSVG(){
+  const p1=[80,10], p2=[10,140], p3=[150,140];
+  const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const m12=mid(p1,p2), m23=mid(p2,p3), m31=mid(p3,p1);
+  return `<svg width="160" height="150" viewBox="0 0 160 150" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;">
+    <polygon points="${p1.join(',')} ${p2.join(',')} ${p3.join(',')}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+    <line x1="${m12[0]}" y1="${m12[1]}" x2="${m23[0]}" y2="${m23[1]}" stroke="var(--accent)" stroke-width="2"/>
+    <line x1="${m23[0]}" y1="${m23[1]}" x2="${m31[0]}" y2="${m31[1]}" stroke="var(--accent)" stroke-width="2"/>
+    <line x1="${m31[0]}" y1="${m31[1]}" x2="${m12[0]}" y2="${m12[1]}" stroke="var(--accent)" stroke-width="2"/>
+  </svg>`;
+}
+/* 2x2 matrix-analogy grid: renders as HTML/CSS grid (not raw SVG math) so it
+   stays simple and robust. A relates to B the way C relates to the missing cell. */
+function matrixGridHTML(topLeft, topRight, bottomLeft){
+  const cell = (item) => item
+    ? `<div class="matrix-cell">${shapeSVG(item.type,{size:52, fill:item.fill||'none', rotate:item.rotate||0, stroke:item.stroke||'var(--accent)'})}</div>`
+    : `<div class="matrix-cell placeholder">?</div>`;
+  return `<div class="matrix-grid">${cell(topLeft)}${cell(topRight)}${cell(bottomLeft)}${cell(null)}</div>`;
+}
+
 const BANK_LOGICAL = [
+  // --- syllogisms with invented terms (keeps real-world bias out of it) ---
   {id:'LR1', weight:1, prompt:'All Bloops are Razzies. All Razzies are Fizzles. Which must be true?',
     options:['All Bloops are Fizzles','All Fizzles are Bloops','No Bloops are Fizzles','Some Fizzles are not Razzies'], correct:0},
   {id:'LR2', weight:2, prompt:'All Wickets are Talons. No Talons are Drefs. Which must be true?',
     options:['No Wickets are Drefs','Some Wickets are Drefs','No Drefs are Talons is false','All Drefs are Wickets'], correct:0},
   {id:'LR3', weight:2, prompt:'All Nooks are Yellow. Some Cribs are Yellow. Which must be true?',
     options:['Cannot be determined whether any Crib is a Nook','All Cribs are Nooks','No Cribs are Nooks','All Nooks are Cribs'], correct:0},
-  {id:'LR4', weight:1, prompt:'Which number does not belong: 3, 5, 9, 11, 13',
+  {id:'LR4', weight:2, prompt:'Some Kelvins are Doras. All Doras are Vantors. Which must be true?',
+    options:['Some Kelvins are Vantors','All Kelvins are Vantors','No Kelvins are Vantors','All Vantors are Kelvins'], correct:0},
+  {id:'LR5', weight:3, prompt:'No Grapples are Thorns. All Vexels are Thorns. Which must be true?',
+    options:['No Grapples are Vexels','All Vexels are Grapples','Some Grapples are Vexels','Cannot be determined'], correct:0},
+  {id:'LR6', weight:3, prompt:'All Zeps are Quils. All Quils are Naxes. Some Naxes are not Boffins. Which must be true?',
+    options:['Cannot be determined whether Zeps are Boffins','All Zeps are Boffins','No Zeps are Boffins','All Boffins are Zeps'], correct:0},
+  // --- odd one out ---
+  {id:'LR7', weight:1, prompt:'Which number does not belong: 3, 5, 9, 11, 13',
     options:['3','5','9','13'], correct:2},
-  {id:'LR5', weight:1, prompt:'Which does not belong: Whale, Dolphin, Shark, Seal',
+  {id:'LR8', weight:1, prompt:'Which does not belong: Whale, Dolphin, Shark, Seal',
     options:['Whale','Dolphin','Shark','Seal'], correct:2},
-  {id:'LR6', weight:2, prompt:'If today is Monday, what day was it 17 days ago?',
-    options:['Thursday','Friday','Saturday','Wednesday'], correct:1},
-  {id:'LR7', weight:1, prompt:'A is older than B. C is younger than B. Who is youngest?',
-    options:['A','B','C','Cannot be determined'], correct:2},
-  {id:'LR8', weight:3, prompt:'P is left of Q. Q is left of R. S is left of P. Who is second from the left?',
-    options:['S','P','Q','R'], correct:1},
-  {id:'LR9', weight:2, prompt:'"All squares are rectangles. This shape is not a rectangle." What follows?',
-    options:['It is not a square','It is a triangle','It is a square','Cannot be determined'], correct:0},
-  {id:'LR10', weight:1, prompt:'Which is the odd one out: Triangle, Square, Circle, Cube',
+  {id:'LR9', weight:1, prompt:'Which is the odd one out: Triangle, Square, Circle, Cube',
     options:['Triangle','Square','Circle','Cube'], correct:3},
-  {id:'LR11', weight:3, prompt:'Five houses sit in a row, numbered 1–5 left to right. The blue house is immediately left of the red house. The green house is at position 1. The red house is at position 4. Where is the blue house?',
+  {id:'LR10', weight:2, prompt:'Which does not belong: Author, Painter, Sculptor, Canvas',
+    options:['Author','Painter','Sculptor','Canvas'], correct:3},
+  // --- calendar / day math ---
+  {id:'LR11', weight:2, prompt:'If today is Monday, what day was it 17 days ago?',
+    options:['Thursday','Friday','Saturday','Wednesday'], correct:1},
+  {id:'LR12', weight:3, prompt:'A non-leap year starts on a Tuesday. What day of the week does it end on?',
+    options:['Monday','Tuesday','Wednesday','Sunday'], correct:1},
+  {id:'LR13', weight:2, prompt:'What day of the week is 100 days after a Sunday?',
+    options:['Monday','Tuesday','Wednesday','Saturday'], correct:1},
+  // --- ordering / seating ---
+  {id:'LR14', weight:3, prompt:'P is left of Q. Q is left of R. S is left of P. Who is second from the left?',
+    options:['S','P','Q','R'], correct:1},
+  {id:'LR15', weight:3, prompt:'Five houses sit in a row, numbered 1–5 left to right. The blue house is immediately left of the red house. The green house is at position 1. The red house is at position 4. Where is the blue house?',
     options:['Position 2','Position 3','Position 4','Position 5'], correct:1},
-  {id:'LR12', weight:2, prompt:'Some Kelvins are Doras. All Doras are Vantors. Which must be true?',
-    options:['Some Kelvins are Vantors','All Kelvins are Vantors','No Kelvins are Vantors','All Vantors are Kelvins'], correct:0}
+  {id:'LR16', weight:2, prompt:'A finished before B. B finished before C. D finished after C but before E. Who finished last?',
+    options:['A','C','D','E'], correct:3},
+  // --- letter coding ---
+  {id:'LR17', weight:2, prompt:'If CAT is coded as DBU (each letter shifted forward by 1), how is DOG coded?',
+    options:['EPH','EPG','FPH','EQH'], correct:0},
+  {id:'LR18', weight:3, prompt:'If FLOWER is coded as GMPXFS (each letter shifted forward by 1), how is GARDEN coded?',
+    options:['HBSEFO','HBSEFP','GBSEFO','HCSEFO'], correct:0},
+  {id:'LR19', weight:2, prompt:'If PENCIL is coded as QFODJM (each letter shifted forward by 1), what is the code for ERASER?',
+    options:['FSBTFS','FSBTFR','ESBTFS','FTBTFS'], correct:0},
+  // --- relation / classic riddle ---
+  {id:'LR20', weight:3, prompt:'A man says: "I have no brothers or sisters, but that man\u2019s father is my father\u2019s son." Who is the man in the photograph?',
+    options:['His son','His father','Himself','His nephew'], correct:0},
+  {id:'LR21', weight:2, prompt:'Sonia introduced a man as the son of the only brother of her mother. How is the man related to Sonia?',
+    options:['Cousin','Brother','Nephew','Uncle'], correct:0},
+  // --- comparison ---
+  {id:'LR22', weight:1, prompt:'Tom is taller than Jerry. Jerry is taller than Max. Max is taller than Sam. Who is shortest?',
+    options:['Tom','Jerry','Max','Sam'], correct:3},
+  // --- letter/number patterns ---
+  {id:'LR23', weight:2, prompt:'Complete the pattern: AZ, BY, CX, DW, __',
+    options:['EV','EU','FV','DV'], correct:0},
+  {id:'LR24', weight:3, prompt:'Complete the pattern: 2A, 4C, 6E, 8G, __',
+    options:['10I','10H','9I','10J'], correct:0}
 ];
 
 const BANK_NUMERICAL = [
+  // --- sequences ---
   {id:'NR1', weight:1, prompt:'Complete the sequence: 2, 4, 8, 16, __', options:['20','24','32','30'], correct:2},
-  {id:'NR2', weight:1, prompt:'Complete the sequence: 5, 10, 15, 20, __', options:['22','24','25','30'], correct:2},
-  {id:'NR3', weight:2, prompt:'Complete the sequence: 1, 1, 2, 3, 5, 8, __', options:['11','12','13','10'], correct:2},
-  {id:'NR4', weight:2, prompt:'Complete the sequence: 3, 6, 12, 24, __', options:['30','36','48','42'], correct:2},
-  {id:'NR5', weight:3, prompt:'Complete the sequence: 2, 5, 10, 17, 26, __', options:['33','35','37','39'], correct:2},
-  {id:'NR6', weight:3, prompt:'Complete the sequence: 7, 11, 16, 22, 29, __', options:['34','36','37','40'], correct:2},
+  {id:'NR2', weight:2, prompt:'Complete the sequence: 1, 1, 2, 3, 5, 8, __', options:['11','12','13','10'], correct:2},
+  {id:'NR3', weight:3, prompt:'Complete the sequence: 2, 5, 10, 17, 26, __', options:['33','35','37','39'], correct:2},
+  {id:'NR4', weight:3, prompt:'Complete the sequence: 7, 11, 16, 22, 29, __', options:['34','36','37','40'], correct:2},
+  {id:'NR5', weight:1, prompt:'Complete the sequence: 3, 6, 12, 24, __', options:['30','36','48','42'], correct:2},
+  {id:'NR6', weight:3, prompt:'Complete the sequence: 4, 9, 19, 39, __', options:['59','69','79','89'], correct:2},
+  // --- distance / speed / time ---
   {id:'NR7', weight:1, prompt:'A train travels at 60 mph for 2.5 hours. How far does it travel?', options:['120 miles','150 miles','130 miles','180 miles'], correct:1},
-  {id:'NR8', weight:2, prompt:'A shirt costs $40 after a 20% discount. What was the original price?', options:['$45','$48','$50','$55'], correct:2},
-  {id:'NR9', weight:2, prompt:'What is 15% of 200?', options:['20','25','30','35'], correct:2},
-  {id:'NR10', weight:3, prompt:'Pipe A fills a tank in 6 hours alone; Pipe B fills it in 4 hours alone. How long together?', options:['2 hours','2.4 hours','2.8 hours','3 hours'], correct:1},
-  {id:'NR11', weight:1, prompt:'Complete the sequence: 100, 90, 81, 73, __', options:['64','65','66','68'], correct:2},
-  {id:'NR12', weight:3, prompt:'Complete the sequence: 4, 9, 19, 39, __', options:['59','69','79','89'], correct:2}
+  {id:'NR8', weight:1, prompt:'A car covers 180 km in 3 hours. What is its speed?', options:['50 km/h','55 km/h','60 km/h','65 km/h'], correct:2},
+  // --- percentage ---
+  {id:'NR9', weight:2, prompt:'A shirt costs $40 after a 20% discount. What was the original price?', options:['$45','$48','$50','$55'], correct:2},
+  {id:'NR10', weight:1, prompt:'What is 15% of 200?', options:['20','25','30','35'], correct:2},
+  {id:'NR11', weight:2, prompt:'A price increased from $80 to $100. What is the percentage increase?', options:['20%','25%','30%','15%'], correct:1},
+  // --- work / rate ---
+  {id:'NR12', weight:3, prompt:'Pipe A fills a tank in 6 hours alone; Pipe B fills it in 4 hours alone. How long together?', options:['2 hours','2.4 hours','2.8 hours','3 hours'], correct:1},
+  {id:'NR13', weight:2, prompt:'5 workers can build a wall in 12 days. How many days would 10 workers take, at the same rate each?', options:['4 days','5 days','6 days','8 days'], correct:2},
+  // --- ratio / proportion ---
+  {id:'NR14', weight:2, prompt:'If 3 pens cost $12, how much do 7 pens cost?', options:['$24','$26','$28','$30'], correct:2},
+  {id:'NR15', weight:2, prompt:'The ratio of boys to girls in a class is 3:2. If there are 30 students total, how many are girls?', options:['10','12','15','18'], correct:1},
+  // --- average ---
+  {id:'NR16', weight:3, prompt:'The average of 4 numbers is 20. Removing one number, the average of the remaining 3 is 18. What was the removed number?', options:['20','22','24','26'], correct:3},
+  {id:'NR17', weight:1, prompt:'Find the average of 12, 18, 24, 30.', options:['20','21','22','24'], correct:1},
+  // --- probability ---
+  {id:'NR18', weight:2, prompt:'A bag has 4 red and 6 blue balls. What is the probability of picking a red ball at random?', options:['1/3','2/5','1/2','3/5'], correct:1},
+  {id:'NR19', weight:1, prompt:'A fair six-sided die is rolled once. What is the probability of rolling an even number?', options:['1/3','1/2','2/3','1/6'], correct:1},
+  // --- geometry ---
+  {id:'NR20', weight:1, prompt:'A rectangle has length 8 cm and width 5 cm. What is its area?', options:['13 cm²','35 cm²','40 cm²','45 cm²'], correct:2},
+  {id:'NR21', weight:1, prompt:'A square has a perimeter of 24 cm. What is the length of one side?', options:['4 cm','6 cm','8 cm','12 cm'], correct:1},
+  // --- number properties ---
+  {id:'NR22', weight:2, prompt:'What is the smallest number divisible by both 4 and 6?', options:['10','12','18','24'], correct:1},
+  {id:'NR23', weight:3, prompt:'How many factors does 18 have (including 1 and 18)?', options:['4','5','6','9'], correct:2},
+  // --- age problem ---
+  {id:'NR24', weight:3, prompt:'Ravi is twice as old as his son. In 10 years, he will be 1.5 times as old as his son. How old is Ravi now?', options:['18','20','24','30'], correct:1}
 ];
 
 const BANK_VERBAL = [
+  // --- analogies (varied relation types) ---
   {id:'VR1', weight:1, prompt:'Pen is to Write as Knife is to __', options:['Sharp','Cut','Kitchen','Blade'], correct:1},
   {id:'VR2', weight:1, prompt:'Bird is to Nest as Bee is to __', options:['Flower','Hive','Sting','Garden'], correct:1},
-  {id:'VR3', weight:2, prompt:'Choose the closest synonym for "Ubiquitous"', options:['Rare','Everywhere','Hidden','Ancient'], correct:1},
-  {id:'VR4', weight:1, prompt:'Choose the antonym of "Benevolent"', options:['Kind','Malevolent','Generous','Wise'], correct:1},
-  {id:'VR5', weight:3, prompt:'Which word is the closest synonym of "Mitigate"?', options:['Aggravate','Alleviate','Instigate','Fabricate'], correct:1},
-  {id:'VR6', weight:2, prompt:'Choose the antonym of "Frugal"', options:['Thrifty','Extravagant','Modest','Careful'], correct:1},
-  {id:'VR7', weight:2, prompt:'Choose the closest synonym for "Ephemeral"', options:['Permanent','Temporary','Eternal','Ancient'], correct:1},
-  {id:'VR8', weight:1, prompt:'Chef is to Kitchen as Pilot is to __', options:['Runway','Cockpit','Sky','Airport'], correct:1},
-  {id:'VR9', weight:3, prompt:'Which word means using far more words than needed?', options:['Verbose','Concise','Terse','Succinct'], correct:0},
-  {id:'VR10', weight:1, prompt:'Choose the antonym of "Ancient"', options:['Old','Modern','Historic','Aged'], correct:1},
-  {id:'VR11', weight:2, prompt:'Choose the closest synonym for "Candid"', options:['Honest','Secretive','Formal','Cautious'], correct:0},
-  {id:'VR12', weight:3, prompt:'Author is to Book as Composer is to __', options:['Symphony','Instrument','Orchestra','Concert'], correct:0}
+  {id:'VR3', weight:3, prompt:'Author is to Book as Composer is to __', options:['Symphony','Instrument','Orchestra','Concert'], correct:0},
+  {id:'VR4', weight:1, prompt:'Chef is to Kitchen as Pilot is to __', options:['Runway','Cockpit','Sky','Airport'], correct:1},
+  {id:'VR5', weight:2, prompt:'Finger is to Hand as Petal is to __', options:['Flower','Stem','Leaf','Root'], correct:0},
+  {id:'VR6', weight:1, prompt:'Doctor is to Hospital as Teacher is to __', options:['School','Classroom','Book','Office'], correct:0},
+  // --- synonyms ---
+  {id:'VR7', weight:2, prompt:'Choose the closest synonym for "Ubiquitous"', options:['Rare','Everywhere','Hidden','Ancient'], correct:1},
+  {id:'VR8', weight:2, prompt:'Choose the closest synonym for "Ephemeral"', options:['Permanent','Temporary','Eternal','Ancient'], correct:1},
+  {id:'VR9', weight:2, prompt:'Choose the closest synonym for "Candid"', options:['Honest','Secretive','Formal','Cautious'], correct:0},
+  {id:'VR10', weight:2, prompt:'Choose the closest synonym for "Meticulous"', options:['Careless','Careful','Hasty','Vague'], correct:1},
+  // --- antonyms ---
+  {id:'VR11', weight:1, prompt:'Choose the antonym of "Benevolent"', options:['Kind','Malevolent','Generous','Wise'], correct:1},
+  {id:'VR12', weight:2, prompt:'Choose the antonym of "Frugal"', options:['Thrifty','Extravagant','Modest','Careful'], correct:1},
+  {id:'VR13', weight:1, prompt:'Choose the antonym of "Ancient"', options:['Old','Modern','Historic','Aged'], correct:1},
+  {id:'VR14', weight:1, prompt:'Choose the antonym of "Optimistic"', options:['Hopeful','Pessimistic','Cheerful','Confident'], correct:1},
+  // --- sentence completion ---
+  {id:'VR15', weight:1, prompt:'"Despite the heavy rain, the match continued ___ interruption."', options:['without','with','despite','unless'], correct:0},
+  {id:'VR16', weight:2, prompt:'"She was so ___ that she finished the marathon despite the injury."', options:['determined','indifferent','reluctant','exhausted'], correct:0},
+  {id:'VR17', weight:2, prompt:'"Although he apologized repeatedly, she remained ___ in her decision not to forgive him."', options:['firm','flexible','uncertain','sympathetic'], correct:0},
+  {id:'VR18', weight:2, prompt:'"The new policy was met with ___ from employees who feared job losses."', options:['resistance','enthusiasm','indifference','gratitude'], correct:0},
+  // --- odd one out (word) ---
+  {id:'VR19', weight:1, prompt:'Which word does not belong: Apple, Banana, Carrot, Grape', options:['Apple','Banana','Carrot','Grape'], correct:2},
+  {id:'VR20', weight:1, prompt:'Which word does not belong: Whisper, Shout, Mumble, Walk', options:['Whisper','Shout','Mumble','Walk'], correct:3},
+  {id:'VR21', weight:2, prompt:'Which word does not belong: Joyful, Elated, Gloomy, Ecstatic', options:['Joyful','Elated','Gloomy','Ecstatic'], correct:2},
+  // --- definitions ---
+  {id:'VR22', weight:3, prompt:'Which word means "to make something less severe"?', options:['Aggravate','Mitigate','Instigate','Fabricate'], correct:1},
+  {id:'VR23', weight:3, prompt:'Which word means "using far more words than necessary"?', options:['Verbose','Concise','Terse','Succinct'], correct:0},
+  {id:'VR24', weight:2, prompt:'Which word means "a strong dislike"?', options:['Aversion','Affection','Admiration','Ambition'], correct:0}
 ];
 
 const BANK_SPATIAL = [
-  {id:'SR1', weight:1, prompt:'Which shape continues the sequence?',
+  // --- sequence completion (kind: 'shape') ---
+  {id:'SR1', kind:'shape', weight:1, prompt:'Which shape continues the sequence?',
     sequence:[{type:'square'},{type:'circle'},{type:'square'},{type:'circle'}],
     options:[{type:'square'},{type:'circle'},{type:'triangle'},{type:'pentagon'}], correct:1},
-  {id:'SR2', weight:2, prompt:'The triangle rotates 90° at each step. What comes next?',
+  {id:'SR2', kind:'shape', weight:2, prompt:'The triangle rotates 90° at each step. What comes next?',
     sequence:[{type:'triangle',rotate:0},{type:'triangle',rotate:90},{type:'triangle',rotate:180},{type:'triangle',rotate:270}],
     options:[{type:'triangle',rotate:0},{type:'triangle',rotate:90},{type:'triangle',rotate:45},{type:'triangle',rotate:180}], correct:0},
-  {id:'SR3', weight:2, prompt:'Each shape gains one side. What comes next?',
+  {id:'SR3', kind:'shape', weight:2, prompt:'Each shape gains one side. What comes next?',
     sequence:[{type:'triangle'},{type:'square'},{type:'pentagon'}],
     options:[{type:'hexagon'},{type:'circle'},{type:'square'},{type:'triangle'}], correct:0},
-  {id:'SR4', weight:1, prompt:'The circle grows larger at each step. What comes next?',
+  {id:'SR4', kind:'shape', weight:1, prompt:'The circle grows larger at each step. What comes next?',
     sequence:[{type:'circle',size:28},{type:'circle',size:38},{type:'circle',size:48}],
     options:[{type:'circle',size:58},{type:'circle',size:38},{type:'circle',size:28},{type:'square',size:58}], correct:0},
-  {id:'SR5', weight:1, prompt:'The fill alternates at each step. What comes next?',
+  {id:'SR5', kind:'shape', weight:1, prompt:'The fill alternates at each step. What comes next?',
     sequence:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'}],
     options:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'circle',fill:'var(--accent)'},{type:'triangle',fill:'none'}], correct:0},
-  {id:'SR6', weight:2, prompt:'What comes next in this repeating pattern?',
-    sequence:[{type:'circle'},{type:'square'},{type:'circle'},{type:'square'},{type:'circle'}],
-    options:[{type:'circle'},{type:'square'},{type:'triangle'},{type:'pentagon'}], correct:1},
-  {id:'SR7', weight:3, prompt:'The pentagon rotates 72° at each step. What comes next?',
+  {id:'SR6', kind:'shape', weight:3, prompt:'The pentagon rotates 72° at each step. What comes next?',
     sequence:[{type:'pentagon',rotate:0},{type:'pentagon',rotate:72},{type:'pentagon',rotate:144}],
     options:[{type:'pentagon',rotate:216},{type:'pentagon',rotate:180},{type:'pentagon',rotate:90},{type:'pentagon',rotate:0}], correct:0},
-  {id:'SR8', weight:2, prompt:'The triangle grows by a fixed amount each step. What comes next?',
+  {id:'SR7', kind:'shape', weight:2, prompt:'The triangle grows by a fixed amount each step. What comes next?',
     sequence:[{type:'triangle',size:24},{type:'triangle',size:32},{type:'triangle',size:40},{type:'triangle',size:48}],
     options:[{type:'triangle',size:56},{type:'triangle',size:48},{type:'triangle',size:40},{type:'circle',size:56}], correct:0},
-  {id:'SR9', weight:1, prompt:'Each shape gains a side. What comes next?',
+  {id:'SR8', kind:'shape', weight:1, prompt:'Each shape gains a side. What comes next?',
     sequence:[{type:'triangle'},{type:'square'},{type:'pentagon'},{type:'hexagon'}],
     options:[{type:'heptagon'},{type:'octagon'},{type:'triangle'},{type:'circle'}], correct:0},
-  {id:'SR10', weight:3, prompt:'The fill alternates and the shape rotates 45° each step. What comes next?',
-    sequence:[{type:'square',fill:'var(--accent)',rotate:0},{type:'square',fill:'none',rotate:45},{type:'square',fill:'var(--accent)',rotate:90},{type:'square',fill:'none',rotate:135}],
-    options:[{type:'square',fill:'var(--accent)',rotate:180},{type:'square',fill:'none',rotate:180},{type:'square',fill:'var(--accent)',rotate:135},{type:'circle',fill:'var(--accent)',rotate:180}], correct:0},
-  {id:'SR11', weight:1, prompt:'What comes next in this repeating pattern of three?',
-    sequence:[{type:'circle'},{type:'circle'},{type:'triangle'},{type:'circle'},{type:'circle'},{type:'triangle'}],
-    options:[{type:'circle'},{type:'triangle'},{type:'square'},{type:'pentagon'}], correct:0},
-  {id:'SR12', weight:2, prompt:'The square shrinks by a fixed amount each step. What comes next?',
-    sequence:[{type:'square',size:48},{type:'square',size:40},{type:'square',size:32}],
-    options:[{type:'square',size:24},{type:'square',size:32},{type:'square',size:40},{type:'circle',size:24}], correct:0}
+  {id:'SR9', kind:'shape', weight:3, prompt:'The outline color cycles through a fixed pattern. What comes next?',
+    sequence:[{type:'square',stroke:'var(--accent)'},{type:'square',stroke:'var(--teal)'},{type:'square',stroke:'var(--coral)'},{type:'square',stroke:'var(--accent)'}],
+    options:[{type:'square',stroke:'var(--teal)'},{type:'square',stroke:'var(--coral)'},{type:'square',stroke:'var(--accent)'},{type:'circle',stroke:'var(--teal)'}], correct:0},
+
+  // --- odd one out (kind: 'oddshape') — 4 shapes shown directly as the answer choices ---
+  {id:'SR10', kind:'oddshape', weight:1, prompt:'Which one of these does not belong?',
+    options:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'square',fill:'var(--accent)'}], correct:2},
+  {id:'SR11', kind:'oddshape', weight:2, prompt:'Which one of these does not belong?',
+    options:[{type:'pentagon',rotate:0},{type:'pentagon',rotate:0},{type:'pentagon',rotate:36},{type:'pentagon',rotate:0}], correct:2},
+  {id:'SR12', kind:'oddshape', weight:1, prompt:'Which one of these does not belong?',
+    options:[{type:'triangle',size:48},{type:'triangle',size:32},{type:'triangle',size:48},{type:'triangle',size:48}], correct:1},
+  {id:'SR13', kind:'oddshape', weight:2, prompt:'Which one of these does not belong?',
+    options:[{type:'hexagon'},{type:'hexagon'},{type:'heptagon'},{type:'hexagon'}], correct:2},
+  {id:'SR14', kind:'oddshape', weight:1, prompt:'Which one of these does not belong?',
+    options:[{type:'circle',stroke:'var(--accent)'},{type:'circle',stroke:'var(--accent)'},{type:'circle',stroke:'var(--accent)'},{type:'circle',stroke:'var(--coral)'}], correct:3},
+  {id:'SR15', kind:'oddshape', weight:3, prompt:'Which one of these does not belong?',
+    options:[{type:'square',rotate:45},{type:'square',rotate:0},{type:'square',rotate:45},{type:'square',rotate:45}], correct:1},
+
+  // --- 2x2 matrix analogy (kind: 'matrix') ---
+  {id:'SR16', kind:'matrix', weight:2, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'square',size:32},{type:'square',size:56},{type:'circle',size:32}],
+    options:[{type:'circle',size:56},{type:'circle',size:32},{type:'triangle',size:56},{type:'square',size:56}], correct:0},
+  {id:'SR17', kind:'matrix', weight:2, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'triangle',fill:'var(--accent)'}],
+    options:[{type:'triangle',fill:'none'},{type:'triangle',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'circle',fill:'none'}], correct:0},
+  {id:'SR18', kind:'matrix', weight:3, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'triangle',rotate:0},{type:'triangle',rotate:90},{type:'square',rotate:0}],
+    options:[{type:'square',rotate:90},{type:'square',rotate:180},{type:'square',rotate:0},{type:'triangle',rotate:90}], correct:0},
+  {id:'SR19', kind:'matrix', weight:2, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'triangle'},{type:'pentagon'},{type:'square'}],
+    options:[{type:'hexagon'},{type:'heptagon'},{type:'pentagon'},{type:'square'}], correct:0},
+  {id:'SR20', kind:'matrix', weight:3, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'circle',stroke:'var(--accent)'},{type:'circle',stroke:'var(--teal)'},{type:'hexagon',stroke:'var(--accent)'}],
+    options:[{type:'hexagon',stroke:'var(--teal)'},{type:'hexagon',stroke:'var(--coral)'},{type:'circle',stroke:'var(--teal)'},{type:'hexagon',stroke:'var(--accent)'}], correct:0},
+  {id:'SR21', kind:'matrix', weight:2, prompt:'The top row shows a relationship. Apply the same rule to the bottom row.',
+    matrixCells:[{type:'triangle',size:56},{type:'triangle',size:28},{type:'square',size:56}],
+    options:[{type:'square',size:28},{type:'square',size:40},{type:'triangle',size:28},{type:'square',size:56}], correct:0},
+
+  // --- counting / composition (kind: 'mcq' with an image) ---
+  {id:'SR22', kind:'mcq', weight:2, prompt:'How many total squares (of any size) are in this figure?', image:'GRID2',
+    options:['4','5','6','8'], correct:1},
+  {id:'SR23', kind:'mcq', weight:3, prompt:'How many total squares (of any size) are in this figure?', image:'GRID3',
+    options:['9','12','13','14'], correct:3},
+  {id:'SR24', kind:'mcq', weight:3, prompt:'The midpoints of each side of this triangle are connected. How many triangles (of any size) are in the figure?', image:'TRIMID',
+    options:['4','5','6','8'], correct:1}
 ];
 
 /* Working memory items are generated fresh each run (see generateMemorySet). */
+
 
 /* ---------- Build a randomized test set each attempt ---------- */
 function drawFive(bank){
@@ -1180,7 +1336,7 @@ function buildTestSet(aiMode){
   const logical = makeSlot(BANK_LOGICAL, 'Logical Reasoning');
   const numerical = makeSlot(BANK_NUMERICAL, 'Numerical Reasoning');
   const verbal = makeSlot(BANK_VERBAL, 'Verbal Reasoning');
-  const spatial = drawFive(BANK_SPATIAL).map(shuffleMcqOptions).map(q=>Object.assign({},q,{kind:'shape',category:'Spatial Reasoning'}));
+  const spatial = drawFive(BANK_SPATIAL).map(shuffleMcqOptions).map(q=>Object.assign({},q,{category:'Spatial Reasoning'}));
   const memory = generateMemorySet();
   return shuffle([...logical, ...numerical, ...verbal, ...spatial, ...memory]);
 }
@@ -1669,20 +1825,32 @@ function renderQuestion(){
   }
 
   let body = '';
+  const IMAGE_MAP = { GRID2: gridSquaresSVG(2), GRID3: gridSquaresSVG(3), TRIMID: triangleMidpointSVG() };
 
   if(q.kind === 'mcq'){
-    body = `<div class="options">` + q.options.map((opt,i)=>
+    const imageHTML = q.image ? `<div class="mcq-image">${IMAGE_MAP[q.image] || ''}</div>` : '';
+    body = imageHTML + `<div class="options">` + q.options.map((opt,i)=>
       `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${opt}</button>`
     ).join('') + `</div>`;
   } else if(q.kind === 'shape'){
-    const seq = q.sequence.map(s=>shapeSVG(s.type,{size:s.size||48,fill:s.fill||'none',rotate:s.rotate||0})).join('<span class="arrow-sep">→</span>');
+    const seq = q.sequence.map(s=>shapeSVG(s.type,{size:s.size||48,fill:s.fill||'none',rotate:s.rotate||0,stroke:s.stroke||'var(--accent)'})).join('<span class="arrow-sep">→</span>');
     const questionMark = `<svg width="48" height="48" viewBox="0 0 48 48" style="background:var(--surface-2);border:1px solid var(--border);border-radius:3px;">
       <text x="24" y="32" fill="var(--text-dim)" font-size="24" font-family="IBM Plex Mono, monospace" text-anchor="middle">?</text>
     </svg>`;
     body = `
       <div class="shape-grid">${seq}<span class="arrow-sep">→</span>${questionMark}</div>
       <div class="options">` + q.options.map((opt,i)=>
-        `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${shapeSVG(opt.type,{size:opt.size||48,fill:opt.fill||'none',rotate:opt.rotate||0})}</button>`
+        `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${shapeSVG(opt.type,{size:opt.size||48,fill:opt.fill||'none',rotate:opt.rotate||0,stroke:opt.stroke||'var(--accent)'})}</button>`
+      ).join('') + `</div>`;
+  } else if(q.kind === 'oddshape'){
+    body = `<div class="options odd-options">` + q.options.map((opt,i)=>
+      `<button class="option odd-option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${shapeSVG(opt.type,{size:64,fill:opt.fill||'none',rotate:opt.rotate||0,stroke:opt.stroke||'var(--accent)'})}</button>`
+    ).join('') + `</div>`;
+  } else if(q.kind === 'matrix'){
+    body = `
+      ${matrixGridHTML(q.matrixCells[0], q.matrixCells[1], q.matrixCells[2])}
+      <div class="options">` + q.options.map((opt,i)=>
+        `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${shapeSVG(opt.type,{size:48,fill:opt.fill||'none',rotate:opt.rotate||0,stroke:opt.stroke||'var(--accent)'})}</button>`
       ).join('') + `</div>`;
   } else if(q.kind === 'memory'){
     const label = q.reverse ? 'Memorize the sequence — you will enter it in REVERSE order' : 'Memorize the sequence — you will enter it in the same order';
@@ -1714,13 +1882,13 @@ function renderQuestion(){
     </div>
   `;
 
-  if(q.kind === 'mcq' || q.kind === 'shape'){
+  if(q.kind === 'mcq' || q.kind === 'shape' || q.kind === 'oddshape' || q.kind === 'matrix'){
     stage.querySelectorAll('.option').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const idx = parseInt(btn.dataset.idx,10);
         const correct = idx === q.correct;
         if(q.kind === 'mcq'){
-          recordAnswer(q, {correct, chosenText:q.options[idx], correctText:q.options[q.correct]});
+          recordAnswer(q, {correct, chosenText:q.options[idx], correctText:q.options[q.correct], image:q.image||null});
         } else {
           recordAnswer(q, {correct, chosenVisual:q.options[idx], correctVisual:q.options[q.correct]});
         }
@@ -2142,19 +2310,24 @@ function reviewItemHTML(a, num){
       <span class="${a.correct ? '' : 'yours'}">Your answer: ${a.chosenText}</span>
       ${a.correct ? '' : `<span class="correct-ans">Correct: ${a.correctText}</span>`}
     </div>`;
-  } else if(a.kind === 'shape'){
+  } else if(a.kind === 'shape' || a.kind === 'oddshape' || a.kind === 'matrix'){
+    if(a.kind === 'oddshape') promptText = 'Which one of these does not belong?';
+    else if(a.kind === 'matrix') promptText = 'The top row shows a relationship — apply the same rule to the bottom row.';
     answersHTML = `<div class="review-visual-row">
       <div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Yours</div>
-        ${shapeSVG(a.chosenVisual.type, {size:36, fill:a.chosenVisual.fill||'none', rotate:a.chosenVisual.rotate||0})}
+        ${shapeSVG(a.chosenVisual.type, {size:36, fill:a.chosenVisual.fill||'none', rotate:a.chosenVisual.rotate||0, stroke:a.chosenVisual.stroke||'var(--accent)'})}
       </div>
       ${a.correct ? '' : `<div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Correct</div>
-        ${shapeSVG(a.correctVisual.type, {size:36, fill:a.correctVisual.fill||'none', rotate:a.correctVisual.rotate||0})}
+        ${shapeSVG(a.correctVisual.type, {size:36, fill:a.correctVisual.fill||'none', rotate:a.correctVisual.rotate||0, stroke:a.correctVisual.stroke||'var(--accent)'})}
       </div>`}
     </div>`;
   } else {
-    answersHTML = `<div class="review-answers">
+    const imgSnippet = a.image
+      ? `<div class="mcq-image" style="transform:scale(0.55); transform-origin:left top; margin-bottom:-30px;">${({GRID2: gridSquaresSVG(2), GRID3: gridSquaresSVG(3), TRIMID: triangleMidpointSVG()})[a.image] || ''}</div>`
+      : '';
+    answersHTML = imgSnippet + `<div class="review-answers">
       <span class="${a.correct ? '' : 'yours'}">Your answer: ${a.chosenText}</span>
       ${a.correct ? '' : `<span class="correct-ans">Correct: ${a.correctText}</span>`}
     </div>`;
