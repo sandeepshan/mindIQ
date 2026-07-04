@@ -1,0 +1,2222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindIQ — Personal IQ Calculator</title>
+<meta name="description" content="A five-domain cognitive aptitude test — logic, numbers, words, spatial patterns, and memory — with a live score breakdown, a cognitive archetype, and adaptive AI-generated questions.">
+
+<!-- Open Graph / social preview. Requires og-image.png deployed at your site root
+     alongside index.html — see README.md for the full file layout. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="MindIQ — Personal IQ Calculator">
+<meta property="og:description" content="Five domains of reasoning, one score, fully broken down. Find your cognitive archetype and see how you compare.">
+<meta property="og:image" content="og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MindIQ — Personal IQ Calculator">
+<meta name="twitter:description" content="Five domains of reasoning, one score, fully broken down.">
+<meta name="twitter:image" content="og-image.png">
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230F131A'/%3E%3Ccircle cx='16' cy='16' r='11' stroke='%23C9A227' stroke-width='2.6' fill='none'/%3E%3Cline x1='16' y1='16' x2='23' y2='10' stroke='%23C9A227' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23C9A227'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+<!--
+  ============================================================
+  FIREBASE LEADERBOARD SETUP (optional — works fine without it)
+  ============================================================
+  1. Create a free project at https://console.firebase.google.com
+  2. Enable Firestore Database (start in test mode, or use rules below).
+  3. Copy your web app config into FIREBASE_CONFIG in the <script> below.
+  4. Suggested Firestore rules (open read, write-only create, no edits/deletes):
+
+     rules_version = '2';
+     service cloud.firestore {
+       match /databases/{database}/documents {
+         match /mindiqLeaderboard/{entry} {
+           allow read: if true;
+           allow create: if request.resource.data.iq is int
+                         && request.resource.data.name is string
+                         && request.resource.data.name.size() < 40;
+           allow update, delete: if false;
+         }
+       }
+     }
+
+  Until you add real keys, the app automatically falls back to a
+  local, browser-only leaderboard (localStorage) so everything still works.
+  ============================================================
+
+  ============================================================
+  ADAPTIVE AI QUESTIONS SETUP (optional — works fine without it)
+  ============================================================
+  This file is the frontend only. Live, difficulty-adaptive questions for
+  the Logical/Numerical/Verbal domains require the two extra files shipped
+  alongside this one:
+
+    netlify.toml
+    netlify/functions/generate-question.js
+
+  Setup:
+  1. Put this HTML file (rename to index.html for a clean root URL),
+     netlify.toml, and the netlify/functions/ folder in the same GitHub repo.
+  2. Get an Anthropic API key at https://console.anthropic.com
+  3. In Netlify: Site configuration -> Environment variables -> add
+     ANTHROPIC_API_KEY with that key as the value.
+  4. Deploy. Netlify auto-detects the function from netlify.toml.
+  5. Tick "Use Adaptive AI Questions" on the start screen to try it.
+
+  If the function isn't deployed, isn't configured, or a call fails or times
+  out, the app automatically substitutes a curated question from the static
+  bank for that slot — the test never breaks either way. Spatial and
+  Working Memory questions are never AI-generated; they stay procedural,
+  since those need precise structural/timing control an LLM can't reliably
+  guarantee.
+  ============================================================
+-->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#0F131A;
+    --surface:#171D27;
+    --surface-2:#1F2733;
+    --border:#2B3444;
+    --accent:#C9A227;
+    --accent-bright:#E8C24A;
+    --accent-soft:rgba(201,162,39,0.14);
+    --teal:#4FB6AE;
+    --coral:#E2695A;
+    --text:#EDEAE0;
+    --text-muted:#8B94A3;
+    --text-dim:#5C6576;
+    --radius:3px;
+    /* domain identity colors — used for icons/badges, kept separate from
+       the teal/amber/coral used for performance (strong/ok/weak) meaning */
+    --dom-logic:#C9A227;
+    --dom-numbers:#4FB6AE;
+    --dom-words:#E2695A;
+    --dom-spatial:#9B8AE0;
+    --dom-memory:#5FA8D3;
+    --zone-orange:#E0954B;
+    --zone-gold:#D9B24C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1100px 550px at 15% -10%, rgba(201,162,39,0.12), transparent 55%),
+      radial-gradient(900px 500px at 100% 10%, rgba(79,182,174,0.08), transparent 55%),
+      radial-gradient(circle, rgba(237,234,224,0.05) 1px, transparent 1px),
+      var(--bg);
+    background-size: auto, auto, 26px 26px, auto;
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  .stage{
+    max-width:780px;
+    margin:0 auto;
+    padding:48px 24px 90px;
+    position:relative;
+    z-index:1;
+  }
+
+  /* floating ambient shapes on intro */
+  .floaters{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0;}
+  .floaters span{
+    position:absolute;
+    border:1.5px solid var(--border);
+    border-radius:50%;
+    opacity:.35;
+    animation:drift 18s ease-in-out infinite;
+  }
+  @keyframes drift{
+    0%,100%{transform:translateY(0) rotate(0deg);}
+    50%{transform:translateY(-26px) rotate(20deg);}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .floaters span{animation:none;}
+    *{animation-duration:0.001s !important; transition-duration:0.001s !important;}
+  }
+
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--accent);
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow::before{
+    content:'';
+    width:6px;height:6px;
+    background:var(--accent);
+    border-radius:50%;
+    display:inline-block;
+    box-shadow:0 0 0 4px var(--accent-soft);
+  }
+  h1.display{
+    font-family:'Fraunces',serif;
+    font-weight:700;
+    font-size:52px;
+    line-height:1.02;
+    letter-spacing:-0.015em;
+    margin:14px 0 8px;
+    background:linear-gradient(100deg, var(--text) 40%, var(--accent-bright) 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    -webkit-text-fill-color:transparent;
+  }
+  .sub{
+    color:var(--text-muted);
+    font-size:15.5px;
+    line-height:1.6;
+    max-width:580px;
+  }
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:32px;
+    margin-top:24px;
+    position:relative;
+    animation:riseIn .5s ease both;
+  }
+  @keyframes riseIn{
+    from{opacity:0; transform:translateY(10px);}
+    to{opacity:1; transform:translateY(0);}
+  }
+  .panel::before{
+    content:'';
+    position:absolute;
+    top:0;left:0;right:0;
+    height:1px;
+    background:linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity:0.5;
+  }
+  .field-row{display:grid; grid-template-columns:2fr 1fr; gap:16px;}
+  @media (max-width:520px){.field-row{grid-template-columns:1fr;}}
+  label.field-label{
+    display:block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-bottom:10px;
+  }
+  input[type=text], input[type=tel], input[type=number]{
+    width:100%;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    font-size:16px;
+    padding:14px 16px;
+    border-radius:var(--radius);
+    outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus{
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  .note{
+    font-size:12.5px;
+    color:var(--text-dim);
+    margin-top:18px;
+    line-height:1.65;
+    border-left:2px solid var(--border);
+    padding-left:12px;
+  }
+  button{
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    letter-spacing:0.01em;
+    cursor:pointer;
+    border:none;
+    border-radius:var(--radius);
+    transition:transform .12s ease, background .15s, box-shadow .15s;
+  }
+  button:active{transform:scale(0.98);}
+  .btn-primary{
+    background:linear-gradient(100deg, var(--accent) 0%, var(--accent-bright) 100%);
+    color:#141821;
+    padding:15px 28px;
+    margin-top:24px;
+    width:100%;
+  }
+  .btn-primary:hover{box-shadow:0 6px 20px rgba(201,162,39,0.25);}
+  .btn-primary:disabled{
+    background:var(--surface-2);
+    color:var(--text-dim);
+    cursor:not-allowed;
+    box-shadow:none;
+  }
+  .btn-ghost{
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    padding:12px 22px;
+  }
+  .btn-ghost:hover{border-color:var(--accent);color:var(--text);}
+  .btn-teal{
+    background:var(--teal);
+    color:#0c1e1c;
+    padding:12px 22px;
+  }
+  .btn-teal:hover{box-shadow:0 6px 18px rgba(79,182,174,0.25);}
+
+  .rail{display:flex; gap:4px; margin-bottom:10px;}
+  .tick{flex:1; height:4px; background:var(--border); border-radius:2px; overflow:hidden; transition:background .25s;}
+  .tick.done{background:var(--accent);}
+  .tick.current{background:var(--teal);}
+  .rail-pct{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:right;
+    margin-bottom:22px;
+  }
+
+  .meta-row{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;}
+  .qnum{font-family:'IBM Plex Mono',monospace; color:var(--text-dim); font-size:12px;}
+  .catlabel{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--accent);
+    display:flex; align-items:center; gap:7px;
+  }
+  .catlabel svg, .cat-name svg, .tip-icon svg, .domain-chip svg{display:block;}
+  .prompt{
+    font-family:'Fraunces',serif;
+    font-size:25px;
+    font-weight:500;
+    line-height:1.3;
+    margin:14px 0 26px;
+  }
+  .qcard{animation:slideIn .35s cubic-bezier(.2,.8,.2,1) both;}
+  @keyframes slideIn{
+    from{opacity:0; transform:translateX(14px);}
+    to{opacity:1; transform:translateX(0);}
+  }
+  .options{display:grid; gap:10px;}
+  .option{
+    display:flex; align-items:center; gap:14px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:14px 16px;
+    text-align:left;
+    font-size:15px;
+    border-radius:var(--radius);
+  }
+  .option:hover{border-color:var(--accent); background:#232C39;}
+  .option .tag{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    width:16px;
+  }
+  .option svg{flex-shrink:0;}
+  .shape-grid{
+    display:flex; gap:18px; align-items:center; justify-content:center;
+    padding:22px 0 8px; flex-wrap:wrap;
+  }
+  .shape-grid svg{background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);}
+  .arrow-sep{color:var(--text-dim); font-size:20px;}
+
+  .memory-display{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:46px;
+    letter-spacing:0.3em;
+    text-align:center;
+    color:var(--accent);
+    padding:34px 16px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    margin-bottom:22px;
+    overflow-x:auto;
+    white-space:nowrap;
+  }
+  .memory-status{
+    text-align:center;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-dim);
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    margin-bottom:18px;
+  }
+  .timer-bar{height:3px; background:var(--surface-2); border-radius:2px; overflow:hidden; margin-bottom:20px;}
+  .timer-fill{height:100%; background:var(--teal); width:100%; transform-origin:left;}
+
+  /* --- results --- */
+  .gauge-wrap{display:flex; flex-direction:column; align-items:center; text-align:center;}
+  .score-huge{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:76px;
+    font-weight:700;
+    line-height:1;
+    margin-top:6px;
+    letter-spacing:-0.01em;
+  }
+  .score-band{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--teal);
+    margin-top:8px;
+    padding:6px 14px;
+    border:1px solid var(--teal);
+    border-radius:20px;
+    display:inline-block;
+  }
+  .serial{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+    margin-top:16px;
+    letter-spacing:0.05em;
+  }
+  .summary-text{
+    font-size:15px;
+    line-height:1.7;
+    color:var(--text-muted);
+    margin-top:18px;
+    text-align:left;
+  }
+  .cat-row{display:grid; grid-template-columns:150px 1fr 46px; align-items:center; gap:14px; margin-bottom:14px;}
+  .cat-name{font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:6px;}
+  .cat-bar-bg{height:9px; background:var(--surface-2); border-radius:5px; overflow:visible; border:1px solid var(--border); position:relative;}
+  .cat-benchmark{position:absolute; top:-4px; bottom:-4px; left:50%; width:1.5px; background:var(--text-dim); opacity:0.55; z-index:1;}
+  .cat-bar-fill{height:100%; border-radius:5px; transition:width 1s cubic-bezier(.2,.8,.2,1);}
+  .cat-pct{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-muted); text-align:right;}
+  .insight-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:8px;}
+  @media (max-width:600px){.insight-grid{grid-template-columns:1fr;}}
+  .insight-card{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-left:3px solid var(--teal);
+    padding:18px;
+    border-radius:var(--radius);
+  }
+  .insight-card.warn{border-left-color:var(--coral);}
+  .insight-card h4{
+    margin:0 0 8px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--teal);
+  }
+  .insight-card.warn h4{color:var(--coral);}
+  .insight-card p{margin:0; font-size:13.5px; color:var(--text-muted); line-height:1.55;}
+
+  .tip-row{
+    display:flex; gap:12px; align-items:flex-start;
+    padding:14px 0;
+    border-bottom:1px solid var(--border);
+  }
+  .tip-row:last-child{border-bottom:none;}
+  .tip-icon{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border-radius:50%;
+    width:30px;height:30px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .tip-body strong{display:block; font-size:13.5px; color:var(--text); margin-bottom:3px;}
+  .tip-body span{font-size:13px; color:var(--text-muted); line-height:1.5;}
+
+  .disclaimer{
+    font-size:12px;
+    color:var(--text-dim);
+    line-height:1.7;
+    margin-top:36px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+  }
+  .section-title{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin:36px 0 16px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .actions{display:flex; gap:10px; margin-top:30px; flex-wrap:wrap;}
+  .actions button{flex:1; min-width:160px;}
+  .hidden{display:none !important;}
+
+  .lb-row{
+    display:grid;
+    grid-template-columns:28px 1fr 60px 60px;
+    gap:10px;
+    align-items:center;
+    padding:10px 0;
+    border-bottom:1px solid var(--border);
+    font-size:13.5px;
+  }
+  .lb-row:last-child{border-bottom:none;}
+  .lb-rank{font-family:'IBM Plex Mono',monospace; color:var(--text-dim); font-size:12px;}
+  .lb-name{color:var(--text);}
+  .lb-age{font-family:'IBM Plex Mono',monospace; color:var(--text-dim); font-size:12px; text-align:right;}
+  .lb-score{font-family:'IBM Plex Mono',monospace; color:var(--accent); font-weight:600; text-align:right;}
+  .lb-row.me{background:var(--accent-soft); border-radius:var(--radius);}
+  .lb-empty{color:var(--text-dim); font-size:13px; text-align:center; padding:20px 0;}
+  .lb-note{font-size:11.5px; color:var(--text-dim); margin-top:12px;}
+
+  .confetti{position:fixed; top:-20px; width:8px; height:14px; opacity:.9; z-index:5; pointer-events:none; animation:fall linear forwards;}
+  @keyframes fall{
+    to{ transform:translateY(110vh) rotate(360deg); opacity:0.2; }
+  }
+
+  /* --- branding / logo --- */
+  .brand-bar{display:flex; align-items:center; gap:8px; margin-bottom:16px;}
+  .brand-bar .brand-word{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+  }
+  h1.display .logo-mark{display:inline-flex; vertical-align:-6px; margin-right:10px;}
+
+  /* --- hero illustration --- */
+  .hero-wrap{position:relative; margin:20px 0 6px; height:64px;}
+  .hero-wrap svg{position:absolute; top:0; left:0; opacity:0.55;}
+
+  /* --- domain chip strip --- */
+  .domain-strip{display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 4px;}
+  .domain-chip{
+    display:flex; align-items:center; gap:6px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:7px 14px 7px 10px;
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .domain-chip .ic{display:flex; align-items:center;}
+
+  .link-line{font-size:13px; color:var(--text-dim); margin-top:16px;}
+  .link-line a{color:var(--teal); text-decoration:none; border-bottom:1px dotted var(--teal);}
+  .link-line a:hover{color:var(--accent-bright); border-color:var(--accent-bright);}
+
+  .insight-list{list-style:none; margin:0; padding:0;}
+  .insight-list li{
+    position:relative;
+    padding:10px 0 10px 22px;
+    font-size:13.5px;
+    color:var(--text-muted);
+    line-height:1.55;
+    border-bottom:1px solid var(--border);
+  }
+  .insight-list li:last-child{border-bottom:none;}
+  .insight-list li::before{
+    content:'◆';
+    position:absolute; left:0; top:10px;
+    color:var(--accent);
+    font-size:9px;
+  }
+  .insight-list strong{color:var(--text);}
+
+  /* --- share row --- */
+  .share-row{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;}
+  .share-btn{
+    display:flex; align-items:center; gap:8px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:10px 16px;
+    border-radius:20px;
+    font-size:13px;
+    font-weight:600;
+    text-decoration:none;
+    cursor:pointer;
+  }
+  .share-btn:hover{border-color:var(--accent);}
+  .share-btn svg{flex-shrink:0;}
+  .share-label{font-size:12px; color:var(--text-dim); margin-top:22px; margin-bottom:2px;}
+
+  /* --- challenge landing screen --- */
+  .challenge-card{text-align:center;}
+  .challenge-name{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em;}
+  .challenge-score{font-family:'Space Grotesk',sans-serif; font-size:64px; font-weight:700; color:var(--accent-bright); margin:6px 0;}
+  .challenge-band{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--teal); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px;}
+  .challenge-archetype{font-style:italic; color:var(--text-muted); margin-bottom:22px; font-size:14px;}
+
+  /* --- in-test challenge reminder --- */
+  .challenge-banner{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--accent-bright);
+    text-align:center; margin-bottom:14px; letter-spacing:0.04em;
+  }
+
+  /* --- head-to-head comparison --- */
+  .h2h-row{display:flex; align-items:center; justify-content:center; gap:20px;}
+  .h2h-card{flex:1; max-width:180px; text-align:center; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius); padding:18px 12px;}
+  .h2h-card.me{border-color:var(--accent);}
+  .h2h-name{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em;}
+  .h2h-score{font-family:'Space Grotesk',sans-serif; font-size:38px; font-weight:700; margin:6px 0; color:var(--text);}
+  .h2h-arch{font-size:12px; color:var(--text-dim); font-style:italic;}
+  .h2h-vs{font-family:'IBM Plex Mono',monospace; color:var(--text-dim); font-weight:700; font-size:13px;}
+  .h2h-verdict{text-align:center; margin-top:18px; font-size:15px; font-weight:600;}
+
+  .attempt-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--text-dim);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:1px 7px;
+    margin-left:6px;
+  }
+
+  /* --- archetype --- */
+  .archetype-panel{
+    background:linear-gradient(160deg, var(--surface-2) 0%, var(--surface) 100%);
+    border:1px solid var(--accent);
+    border-radius:var(--radius);
+    padding:28px 32px;
+    margin-top:24px;
+    text-align:center;
+  }
+  .archetype-eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+  }
+  .archetype-icon{display:flex; justify-content:center; margin:10px 0 4px; font-size:38px;}
+  .archetype-name{
+    font-family:'Fraunces',serif;
+    font-weight:700;
+    font-size:30px;
+    color:var(--accent-bright);
+  }
+  .archetype-tagline{
+    font-size:14px;
+    color:var(--text-muted);
+    font-style:italic;
+    margin-top:4px;
+  }
+  .archetype-desc{
+    font-size:14px;
+    line-height:1.7;
+    color:var(--text);
+    max-width:560px;
+    margin:16px auto 0;
+    text-align:left;
+  }
+
+  /* --- percentile --- */
+  .percentile-track{
+    position:relative;
+    height:14px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin:18px 0 8px;
+    overflow:visible;
+  }
+  .percentile-fill{
+    height:100%;
+    border-radius:8px 0 0 8px;
+    background:linear-gradient(90deg, var(--teal), var(--accent));
+  }
+  .percentile-marker{
+    position:absolute;
+    top:-7px;
+    width:2px;
+    height:28px;
+    background:var(--text);
+  }
+  .percentile-scale{
+    display:flex;
+    justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    color:var(--text-dim);
+  }
+  .percentile-headline{
+    font-size:15px;
+    color:var(--text);
+    margin-bottom:4px;
+  }
+  .percentile-headline strong{color:var(--accent-bright);}
+  .percentile-note{font-size:12px; color:var(--text-dim); margin-top:10px;}
+
+  /* --- AI mode toggle --- */
+  .ai-toggle{
+    display:flex; align-items:flex-start; gap:12px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-top:16px;
+    cursor:pointer;
+  }
+  .ai-toggle input{margin-top:3px; flex-shrink:0; accent-color:var(--accent);}
+  .ai-toggle .ai-toggle-title{font-size:14px; font-weight:600; color:var(--text);}
+  .ai-toggle .ai-toggle-sub{font-size:12px; color:var(--text-dim); margin-top:3px; line-height:1.5;}
+  .ai-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:0.06em;
+    color:var(--teal);
+    border:1px solid var(--teal);
+    border-radius:10px;
+    padding:1px 8px;
+    margin-left:8px;
+  }
+  .ai-badge.fallback{color:var(--text-dim); border-color:var(--border);}
+
+  /* --- loading spinner (AI question fetch) --- */
+  .loading-card{text-align:center; padding:50px 0;}
+  .spinner{
+    width:34px; height:34px;
+    border:3px solid var(--border);
+    border-top-color:var(--accent);
+    border-radius:50%;
+    margin:0 auto 18px;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .loading-text{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-dim); letter-spacing:0.06em; text-transform:uppercase;}
+
+  .ai-fallback-note{
+    font-size:12px; color:var(--text-dim);
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:var(--radius); padding:10px 14px; margin-bottom:20px;
+  }
+
+  /* --- answer review --- */
+  .review-toggle-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px;}
+  .review-filter{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.06em;
+    color:var(--text-muted); background:var(--surface-2); border:1px solid var(--border);
+    border-radius:16px; padding:6px 14px; cursor:pointer;
+  }
+  .review-filter.active{color:#141821; background:var(--accent); border-color:var(--accent);}
+  .review-item{
+    display:grid; grid-template-columns:24px 1fr; gap:12px;
+    padding:16px 0; border-bottom:1px solid var(--border);
+  }
+  .review-item:last-child{border-bottom:none;}
+  .review-mark{font-size:16px; text-align:center; padding-top:2px;}
+  .review-mark.ok{color:var(--teal);}
+  .review-mark.no{color:var(--coral);}
+  .review-cat{font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-dim); display:flex; align-items:center; gap:6px;}
+  .review-prompt{font-size:14px; color:var(--text); margin:6px 0 8px; line-height:1.5;}
+  .review-answers{font-size:13px; color:var(--text-muted); display:flex; flex-direction:column; gap:3px;}
+  .review-answers .yours{color:var(--coral);}
+  .review-answers .correct-ans{color:var(--teal);}
+  .review-visual-row{display:flex; gap:14px; align-items:center; margin-top:6px;}
+
+  .app-footer{
+    text-align:center;
+    font-size:12px;
+    color:var(--text-dim);
+    margin-top:48px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+  }
+  .app-footer a{color:var(--text-muted); text-decoration:none; border-bottom:1px dotted var(--text-dim);}
+  .app-footer a:hover{color:var(--accent-bright); border-color:var(--accent-bright);}
+  .footer-dot{margin:0 2px;}
+
+  /* --- responsive SVGs: let every generated chart/icon scale down instead of
+     overflowing narrow viewports, while preserving aspect ratio --- */
+  svg{max-width:100%; height:auto;}
+
+  /* ============================================================
+     MOBILE (phones, ~600px and below)
+     ============================================================ */
+  @media (max-width: 600px){
+    .stage{padding:28px 16px 70px;}
+    h1.display{font-size:36px;}
+    .sub{font-size:14px;}
+    .panel{padding:22px 18px;}
+    .score-huge{font-size:56px;}
+    .archetype-name{font-size:24px;}
+    .archetype-panel{padding:22px 18px;}
+    .prompt{font-size:20px;}
+    .field-row{gap:12px;}
+
+    /* memory digit display: shrink so long sequences fit without needing
+       to scroll during a timed recall task */
+    .memory-display{font-size:30px; letter-spacing:0.18em; padding:26px 12px;}
+
+    /* domain breakdown: give the bar itself more room on narrow screens */
+    .cat-row{grid-template-columns: 96px 1fr 38px; gap:8px;}
+    .cat-name{font-size:11.5px; line-height:1.25;}
+
+    /* leaderboard: tighten columns */
+    .lb-row{grid-template-columns: 22px 1fr 46px 46px; font-size:12.5px;}
+
+    /* shape sequence questions: smaller icons + tighter gaps so 4-5 shapes
+       plus arrows fit on one line without wrapping awkwardly */
+    .shape-grid{gap:10px;}
+    .shape-grid svg{transform:scale(0.82);}
+
+    /* buttons stack cleanly rather than fighting for width */
+    .actions{flex-direction:column;}
+    .actions button{min-width:0; width:100%;}
+    .share-row{gap:8px;}
+    .share-btn{padding:10px 14px; font-size:12.5px;}
+
+    /* hero illustration: shrink to match narrower stage */
+    .hero-wrap{height:44px;}
+
+    /* insight/growth-plan icons a touch smaller to save horizontal space */
+    .tip-icon{width:26px; height:26px;}
+
+    .gauge-wrap svg{max-width:280px;}
+
+    /* head-to-head: stack vertically with VS as a horizontal divider */
+    .h2h-row{flex-direction:column; gap:10px;}
+    .h2h-card{max-width:none; width:100%;}
+    .h2h-vs::before, .h2h-vs::after{content:''; display:inline-block; width:30px; height:1px; background:var(--border); vertical-align:middle; margin:0 8px;}
+  }
+
+  /* ============================================================
+     SMALL PHONES (~380px and below)
+     ============================================================ */
+  @media (max-width: 380px){
+    h1.display{font-size:30px;}
+    .score-huge{font-size:48px;}
+    .memory-display{font-size:24px; letter-spacing:0.12em;}
+    .cat-row{grid-template-columns: 80px 1fr 34px;}
+    .domain-chip{padding:6px 10px 6px 8px; font-size:11.5px;}
+  }
+</style>
+</head>
+<body>
+<div class="floaters" id="floaters"></div>
+<div class="stage" id="stage"></div>
+
+<script>
+/* ============================================================
+   MINDIQ — PERSONAL IQ CALCULATOR
+   Single-file, dependency-free (Firebase optional). All logic below.
+============================================================ */
+
+/* ---------- OPTIONAL: paste your Firebase web config here ---------- */
+/* ---------- Creator credit (edit these two lines) ---------- */
+const CREATOR_NAME = 'Sandeep';
+const CREATOR_LINKEDIN_URL = ''; // e.g. 'https://www.linkedin.com/in/yourprofile' — leave blank to hide the link
+function footerHTML(){
+  const linkedin = CREATOR_LINKEDIN_URL
+    ? ` <span class="footer-dot">·</span> <a href="${CREATOR_LINKEDIN_URL}" target="_blank" rel="noopener">LinkedIn ↗</a>`
+    : '';
+  return `<div class="app-footer">Built by ${CREATOR_NAME} with MindIQ${linkedin}</div>`;
+}
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBUsbIHjgnQwaZ7mMcjOSgLPstLfvzWkFo",
+  authDomain: "mindiq-dfd1b.firebaseapp.com",
+  projectId: "mindiq-dfd1b",
+  storageBucket: "mindiq-dfd1b.firebasestorage.app",
+  messagingSenderId: "775365897678",
+  appId: "1:775365897678:web:76adcfb3d2ca0e1e170f9f"
+};
+let firebaseEnabled = false;
+let db = null;
+try{
+  if(FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY" && window.firebase){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    firebaseEnabled = true;
+  }
+}catch(e){ console.warn('Firebase not configured — using local leaderboard.', e); }
+
+const APP = { name:'', age:null, currentIndex:0, answers:[], startTime:null, testSet:[],
+  aiMode:false, aiDifficulty:{}, aiUsedPrompts:[], aiFallbackHappened:false, challenge:null };
+
+/* ---------- ambient floating shapes (intro screen only) ---------- */
+function paintFloaters(){
+  const el = document.getElementById('floaters');
+  let html = '';
+  const shapes = [{w:90,t:'10%',l:'8%',dur:'20s'},{w:50,t:'70%',l:'85%',dur:'16s'},
+                  {w:130,t:'40%',l:'92%',dur:'24s'},{w:60,t:'85%',l:'12%',dur:'19s'},
+                  {w:40,t:'5%',l:'60%',dur:'22s'}];
+  shapes.forEach((s,i)=>{
+    html += `<span style="width:${s.w}px;height:${s.w}px;top:${s.t};left:${s.l};animation-duration:${s.dur};animation-delay:${i*0.6}s;"></span>`;
+  });
+  el.innerHTML = html;
+}
+
+/* ---------- Shape rendering for spatial questions ---------- */
+function shapeSVG(type, {size=48, fill='none', stroke='var(--accent)', rotate=0, sw=2.5} = {}){
+  const s = size;
+  const c = s/2;
+  let inner = '';
+  if(type==='circle'){ inner = `<circle cx="${c}" cy="${c}" r="${c-6}" />`; }
+  else if(type==='square'){ inner = `<rect x="6" y="6" width="${s-12}" height="${s-12}" />`; }
+  else if(type==='triangle'){ inner = `<polygon points="${c},6 ${s-6},${s-6} 6,${s-6}" />`; }
+  else if(type==='pentagon'){ inner = polygonPoints(c,c,c-6,5,-90); }
+  else if(type==='hexagon'){ inner = polygonPoints(c,c,c-6,6,-90); }
+  else if(type==='heptagon'){ inner = polygonPoints(c,c,c-6,7,-90); }
+  else if(type==='octagon'){ inner = polygonPoints(c,c,c-6,8,-90); }
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">
+    <g transform="rotate(${rotate} ${c} ${c})" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round">
+      ${inner}
+    </g>
+  </svg>`;
+}
+function polygonPoints(cx,cy,r,sides,offset=0){
+  let pts = [];
+  for(let i=0;i<sides;i++){
+    const angle = (Math.PI*2*i/sides) + (offset*Math.PI/180);
+    pts.push(`${(cx+r*Math.cos(angle)).toFixed(1)},${(cy+r*Math.sin(angle)).toFixed(1)}`);
+  }
+  return `<polygon points="${pts.join(' ')}" />`;
+}
+
+/* ---------- Brand mark & decorative illustrations ---------- */
+function logoSVG(size=26){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="13" stroke="var(--accent)" stroke-width="2.4"/>
+    <line x1="16" y1="16" x2="24" y2="9" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="16" cy="16" r="2.4" fill="var(--accent)"/>
+  </svg>`;
+}
+function heroNetworkSVG(){
+  // a light "neural constellation" flourish — dots colored by the five domains
+  const pts = [[20,44],[80,14],[150,38],[230,10],[300,40],[360,16],[420,42],
+               [60,58],[190,60],[330,58],[110,20],[270,58]];
+  const links = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[0,7],[2,8],[4,9],[1,10],[3,11],[7,8],[8,9],[9,6]];
+  const domainColors = CATEGORY_ORDER.map(c=>DOMAIN_COLOR[c]);
+  const dots = pts.map(([x,y],i)=>`<circle cx="${x}" cy="${y}" r="2.8" fill="${domainColors[i % domainColors.length]}"/>`).join('');
+  const lines = links.map(([a,b])=>`<line x1="${pts[a][0]}" y1="${pts[a][1]}" x2="${pts[b][0]}" y2="${pts[b][1]}" stroke="var(--border)" stroke-width="1"/>`).join('');
+  return `<svg width="460" height="70" viewBox="0 0 460 70">${lines}${dots}</svg>`;
+}
+function shareIcon(kind){
+  if(kind==='x'){
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-7.6 8.7L23 22h-6.7l-5.2-6.6L5.1 22H2l8.1-9.3L1.4 2h6.9l4.7 6.1L18.9 2zm-1.2 18h1.9L7.4 4H5.3l12.4 16z"/></svg>`;
+  }
+  if(kind==='linkedin'){
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5C4.98 4.9 3.9 6 2.5 6S0 4.9 0 3.5 1.1 1 2.5 1s2.48 1.1 2.48 2.5zM.5 8.25h4V23h-4V8.25zM8.5 8.25h3.83v2.02h.05c.53-1 1.85-2.06 3.8-2.06 4.06 0 4.82 2.67 4.82 6.14V23h-4v-6.72c0-1.6-.03-3.66-2.23-3.66-2.24 0-2.58 1.75-2.58 3.55V23h-4V8.25z"/></svg>`;
+  }
+  if(kind==='whatsapp'){
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3zM12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.6 1.4 5.1L2 22l5.1-1.3c1.4.8 3.1 1.2 4.9 1.2 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>`;
+  }
+  return '';
+}
+
+/* ---------- Utility ---------- */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function randDigits(len){
+  let s='';
+  for(let i=0;i<len;i++) s += randInt(0,9);
+  return s;
+}
+
+/* ============================================================
+   QUESTION BANKS — a large pool per category.
+   Each test run randomly draws 5 per category (and generates
+   5 fresh working-memory items), then shuffles option order,
+   so repeat attempts rarely look the same.
+============================================================ */
+/* ---------- Challenge a Friend ---------- */
+function buildChallengeUrl(name, iq, archetypeName, band){
+  const base = window.location.href.split('?')[0];
+  const params = new URLSearchParams();
+  params.set('challenge', '1');
+  params.set('n', name);
+  params.set('s', String(iq));
+  params.set('a', archetypeName);
+  params.set('b', band);
+  return `${base}?${params.toString()}`;
+}
+function parseChallengeFromURL(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('challenge') === '1'){
+      const n = params.get('n');
+      const s = parseInt(params.get('s'), 10);
+      if(n && !isNaN(s)){
+        return { name: n, score: s, archetype: params.get('a') || null, band: params.get('b') || null };
+      }
+    }
+  }catch(e){}
+  return null;
+}
+function renderChallengeScreen(challenge){
+  paintFloaters();
+  stage.innerHTML = `
+    <div class="brand-bar">${logoSVG(20)}<span class="brand-word">MindIQ</span></div>
+    <div class="eyebrow">You've Been Challenged</div>
+    <h1 class="display">Beat ${challenge.name}?</h1>
+    <div class="hero-wrap">${heroNetworkSVG()}</div>
+    <div class="panel challenge-card">
+      <div class="challenge-name">${challenge.name} scored</div>
+      <div class="challenge-score">${challenge.score}</div>
+      ${challenge.band ? `<div class="challenge-band">${challenge.band}</div>` : ''}
+      ${challenge.archetype ? `<div class="challenge-archetype">"${challenge.archetype}"</div>` : ''}
+      <button class="btn-primary" id="acceptChallengeBtn">Accept the Challenge →</button>
+    </div>
+    ${footerHTML()}
+  `;
+  document.getElementById('acceptChallengeBtn').addEventListener('click', ()=>{
+    APP.challenge = challenge;
+    renderIntro();
+  });
+}
+function challengeBannerHTML(){
+  return APP.challenge
+    ? `<div class="challenge-banner">🎯 Beat ${APP.challenge.name}'s ${APP.challenge.score} to win</div>`
+    : '';
+}
+function headToHeadHTML(challenge, myIQ, myArchetypeName){
+  const diff = myIQ - challenge.score;
+  let verdict, verdictColor;
+  if(diff > 0){ verdict = `You're ahead by ${diff} point${diff===1?'':'s'}! 🎉`; verdictColor = 'var(--teal)'; }
+  else if(diff < 0){ verdict = `${challenge.name} is still ahead by ${Math.abs(diff)} point${Math.abs(diff)===1?'':'s'}.`; verdictColor = 'var(--coral)'; }
+  else { verdict = `Dead even!`; verdictColor = 'var(--accent-bright)'; }
+  return `
+    <div class="section-title">🥊 Head-to-Head vs ${challenge.name}</div>
+    <div class="panel">
+      <div class="h2h-row">
+        <div class="h2h-card">
+          <div class="h2h-name">${challenge.name}</div>
+          <div class="h2h-score">${challenge.score}</div>
+          ${challenge.archetype ? `<div class="h2h-arch">${challenge.archetype}</div>` : ''}
+        </div>
+        <div class="h2h-vs">VS</div>
+        <div class="h2h-card me">
+          <div class="h2h-name">You</div>
+          <div class="h2h-score">${myIQ}</div>
+          <div class="h2h-arch">${myArchetypeName}</div>
+        </div>
+      </div>
+      <div class="h2h-verdict" style="color:${verdictColor}">${verdict}</div>
+    </div>
+  `;
+}
+
+const CATEGORY_ORDER = ['Logical Reasoning','Numerical Reasoning','Verbal Reasoning','Spatial Reasoning','Working Memory'];
+const DOMAIN_COLOR = {
+  'Logical Reasoning':'var(--dom-logic)', 'Numerical Reasoning':'var(--dom-numbers)',
+  'Verbal Reasoning':'var(--dom-words)', 'Spatial Reasoning':'var(--dom-spatial)',
+  'Working Memory':'var(--dom-memory)'
+};
+/* Bespoke line-art icons (one per domain) instead of generic emoji —
+   drawn to match the instrument-panel aesthetic and colored by domain. */
+function categoryIcon(cat, size=16){
+  const c = DOMAIN_COLOR[cat] || 'var(--accent)';
+  const s = size;
+  const paths = {
+    'Logical Reasoning': `<circle cx="6.5" cy="8" r="4.5"/><circle cx="13.5" cy="8" r="4.5"/>`,
+    'Numerical Reasoning': `<line x1="4" y1="14" x2="4" y2="8"/><line x1="10" y1="14" x2="10" y2="4"/><line x1="16" y1="14" x2="16" y2="10"/>`,
+    'Verbal Reasoning': `<path d="M2 3h7v11l-3.5-2H2z"/><path d="M18 3h-7v11l3.5-2H18z" transform="translate(0,0)"/>`,
+    'Spatial Reasoning': `<path d="M10 2 L18 6 L18 14 L10 18 L2 14 L2 6 Z"/><path d="M2 6 L10 10 L18 6"/><line x1="10" y1="10" x2="10" y2="18"/>`,
+    'Working Memory': `<rect x="4" y="4" width="12" height="12" rx="2"/><line x1="7" y1="1" x2="7" y2="4"/><line x1="13" y1="1" x2="13" y2="4"/><line x1="7" y1="16" x2="7" y2="19"/><line x1="13" y1="16" x2="13" y2="19"/><line x1="1" y1="7" x2="4" y2="7"/><line x1="1" y1="13" x2="4" y2="13"/><line x1="16" y1="7" x2="19" y2="7"/><line x1="16" y1="13" x2="19" y2="13"/>`
+  };
+  return `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">${paths[cat]||''}</svg>`;
+}
+
+const BANK_LOGICAL = [
+  {id:'LR1', weight:1, prompt:'All Bloops are Razzies. All Razzies are Fizzles. Which must be true?',
+    options:['All Bloops are Fizzles','All Fizzles are Bloops','No Bloops are Fizzles','Some Fizzles are not Razzies'], correct:0},
+  {id:'LR2', weight:2, prompt:'All Wickets are Talons. No Talons are Drefs. Which must be true?',
+    options:['No Wickets are Drefs','Some Wickets are Drefs','No Drefs are Talons is false','All Drefs are Wickets'], correct:0},
+  {id:'LR3', weight:2, prompt:'All Nooks are Yellow. Some Cribs are Yellow. Which must be true?',
+    options:['Cannot be determined whether any Crib is a Nook','All Cribs are Nooks','No Cribs are Nooks','All Nooks are Cribs'], correct:0},
+  {id:'LR4', weight:1, prompt:'Which number does not belong: 3, 5, 9, 11, 13',
+    options:['3','5','9','13'], correct:2},
+  {id:'LR5', weight:1, prompt:'Which does not belong: Whale, Dolphin, Shark, Seal',
+    options:['Whale','Dolphin','Shark','Seal'], correct:2},
+  {id:'LR6', weight:2, prompt:'If today is Monday, what day was it 17 days ago?',
+    options:['Thursday','Friday','Saturday','Wednesday'], correct:1},
+  {id:'LR7', weight:1, prompt:'A is older than B. C is younger than B. Who is youngest?',
+    options:['A','B','C','Cannot be determined'], correct:2},
+  {id:'LR8', weight:3, prompt:'P is left of Q. Q is left of R. S is left of P. Who is second from the left?',
+    options:['S','P','Q','R'], correct:1},
+  {id:'LR9', weight:2, prompt:'"All squares are rectangles. This shape is not a rectangle." What follows?',
+    options:['It is not a square','It is a triangle','It is a square','Cannot be determined'], correct:0},
+  {id:'LR10', weight:1, prompt:'Which is the odd one out: Triangle, Square, Circle, Cube',
+    options:['Triangle','Square','Circle','Cube'], correct:3},
+  {id:'LR11', weight:3, prompt:'Five houses sit in a row, numbered 1–5 left to right. The blue house is immediately left of the red house. The green house is at position 1. The red house is at position 4. Where is the blue house?',
+    options:['Position 2','Position 3','Position 4','Position 5'], correct:1},
+  {id:'LR12', weight:2, prompt:'Some Kelvins are Doras. All Doras are Vantors. Which must be true?',
+    options:['Some Kelvins are Vantors','All Kelvins are Vantors','No Kelvins are Vantors','All Vantors are Kelvins'], correct:0}
+];
+
+const BANK_NUMERICAL = [
+  {id:'NR1', weight:1, prompt:'Complete the sequence: 2, 4, 8, 16, __', options:['20','24','32','30'], correct:2},
+  {id:'NR2', weight:1, prompt:'Complete the sequence: 5, 10, 15, 20, __', options:['22','24','25','30'], correct:2},
+  {id:'NR3', weight:2, prompt:'Complete the sequence: 1, 1, 2, 3, 5, 8, __', options:['11','12','13','10'], correct:2},
+  {id:'NR4', weight:2, prompt:'Complete the sequence: 3, 6, 12, 24, __', options:['30','36','48','42'], correct:2},
+  {id:'NR5', weight:3, prompt:'Complete the sequence: 2, 5, 10, 17, 26, __', options:['33','35','37','39'], correct:2},
+  {id:'NR6', weight:3, prompt:'Complete the sequence: 7, 11, 16, 22, 29, __', options:['34','36','37','40'], correct:2},
+  {id:'NR7', weight:1, prompt:'A train travels at 60 mph for 2.5 hours. How far does it travel?', options:['120 miles','150 miles','130 miles','180 miles'], correct:1},
+  {id:'NR8', weight:2, prompt:'A shirt costs $40 after a 20% discount. What was the original price?', options:['$45','$48','$50','$55'], correct:2},
+  {id:'NR9', weight:2, prompt:'What is 15% of 200?', options:['20','25','30','35'], correct:2},
+  {id:'NR10', weight:3, prompt:'Pipe A fills a tank in 6 hours alone; Pipe B fills it in 4 hours alone. How long together?', options:['2 hours','2.4 hours','2.8 hours','3 hours'], correct:1},
+  {id:'NR11', weight:1, prompt:'Complete the sequence: 100, 90, 81, 73, __', options:['64','65','66','68'], correct:2},
+  {id:'NR12', weight:3, prompt:'Complete the sequence: 4, 9, 19, 39, __', options:['59','69','79','89'], correct:2}
+];
+
+const BANK_VERBAL = [
+  {id:'VR1', weight:1, prompt:'Pen is to Write as Knife is to __', options:['Sharp','Cut','Kitchen','Blade'], correct:1},
+  {id:'VR2', weight:1, prompt:'Bird is to Nest as Bee is to __', options:['Flower','Hive','Sting','Garden'], correct:1},
+  {id:'VR3', weight:2, prompt:'Choose the closest synonym for "Ubiquitous"', options:['Rare','Everywhere','Hidden','Ancient'], correct:1},
+  {id:'VR4', weight:1, prompt:'Choose the antonym of "Benevolent"', options:['Kind','Malevolent','Generous','Wise'], correct:1},
+  {id:'VR5', weight:3, prompt:'Which word is the closest synonym of "Mitigate"?', options:['Aggravate','Alleviate','Instigate','Fabricate'], correct:1},
+  {id:'VR6', weight:2, prompt:'Choose the antonym of "Frugal"', options:['Thrifty','Extravagant','Modest','Careful'], correct:1},
+  {id:'VR7', weight:2, prompt:'Choose the closest synonym for "Ephemeral"', options:['Permanent','Temporary','Eternal','Ancient'], correct:1},
+  {id:'VR8', weight:1, prompt:'Chef is to Kitchen as Pilot is to __', options:['Runway','Cockpit','Sky','Airport'], correct:1},
+  {id:'VR9', weight:3, prompt:'Which word means using far more words than needed?', options:['Verbose','Concise','Terse','Succinct'], correct:0},
+  {id:'VR10', weight:1, prompt:'Choose the antonym of "Ancient"', options:['Old','Modern','Historic','Aged'], correct:1},
+  {id:'VR11', weight:2, prompt:'Choose the closest synonym for "Candid"', options:['Honest','Secretive','Formal','Cautious'], correct:0},
+  {id:'VR12', weight:3, prompt:'Author is to Book as Composer is to __', options:['Symphony','Instrument','Orchestra','Concert'], correct:0}
+];
+
+const BANK_SPATIAL = [
+  {id:'SR1', weight:1, prompt:'Which shape continues the sequence?',
+    sequence:[{type:'square'},{type:'circle'},{type:'square'},{type:'circle'}],
+    options:[{type:'square'},{type:'circle'},{type:'triangle'},{type:'pentagon'}], correct:1},
+  {id:'SR2', weight:2, prompt:'The triangle rotates 90° at each step. What comes next?',
+    sequence:[{type:'triangle',rotate:0},{type:'triangle',rotate:90},{type:'triangle',rotate:180},{type:'triangle',rotate:270}],
+    options:[{type:'triangle',rotate:0},{type:'triangle',rotate:90},{type:'triangle',rotate:45},{type:'triangle',rotate:180}], correct:0},
+  {id:'SR3', weight:2, prompt:'Each shape gains one side. What comes next?',
+    sequence:[{type:'triangle'},{type:'square'},{type:'pentagon'}],
+    options:[{type:'hexagon'},{type:'circle'},{type:'square'},{type:'triangle'}], correct:0},
+  {id:'SR4', weight:1, prompt:'The circle grows larger at each step. What comes next?',
+    sequence:[{type:'circle',size:28},{type:'circle',size:38},{type:'circle',size:48}],
+    options:[{type:'circle',size:58},{type:'circle',size:38},{type:'circle',size:28},{type:'square',size:58}], correct:0},
+  {id:'SR5', weight:1, prompt:'The fill alternates at each step. What comes next?',
+    sequence:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'}],
+    options:[{type:'square',fill:'var(--accent)'},{type:'square',fill:'none'},{type:'circle',fill:'var(--accent)'},{type:'triangle',fill:'none'}], correct:0},
+  {id:'SR6', weight:2, prompt:'What comes next in this repeating pattern?',
+    sequence:[{type:'circle'},{type:'square'},{type:'circle'},{type:'square'},{type:'circle'}],
+    options:[{type:'circle'},{type:'square'},{type:'triangle'},{type:'pentagon'}], correct:1},
+  {id:'SR7', weight:3, prompt:'The pentagon rotates 72° at each step. What comes next?',
+    sequence:[{type:'pentagon',rotate:0},{type:'pentagon',rotate:72},{type:'pentagon',rotate:144}],
+    options:[{type:'pentagon',rotate:216},{type:'pentagon',rotate:180},{type:'pentagon',rotate:90},{type:'pentagon',rotate:0}], correct:0},
+  {id:'SR8', weight:2, prompt:'The triangle grows by a fixed amount each step. What comes next?',
+    sequence:[{type:'triangle',size:24},{type:'triangle',size:32},{type:'triangle',size:40},{type:'triangle',size:48}],
+    options:[{type:'triangle',size:56},{type:'triangle',size:48},{type:'triangle',size:40},{type:'circle',size:56}], correct:0},
+  {id:'SR9', weight:1, prompt:'Each shape gains a side. What comes next?',
+    sequence:[{type:'triangle'},{type:'square'},{type:'pentagon'},{type:'hexagon'}],
+    options:[{type:'heptagon'},{type:'octagon'},{type:'triangle'},{type:'circle'}], correct:0},
+  {id:'SR10', weight:3, prompt:'The fill alternates and the shape rotates 45° each step. What comes next?',
+    sequence:[{type:'square',fill:'var(--accent)',rotate:0},{type:'square',fill:'none',rotate:45},{type:'square',fill:'var(--accent)',rotate:90},{type:'square',fill:'none',rotate:135}],
+    options:[{type:'square',fill:'var(--accent)',rotate:180},{type:'square',fill:'none',rotate:180},{type:'square',fill:'var(--accent)',rotate:135},{type:'circle',fill:'var(--accent)',rotate:180}], correct:0},
+  {id:'SR11', weight:1, prompt:'What comes next in this repeating pattern of three?',
+    sequence:[{type:'circle'},{type:'circle'},{type:'triangle'},{type:'circle'},{type:'circle'},{type:'triangle'}],
+    options:[{type:'circle'},{type:'triangle'},{type:'square'},{type:'pentagon'}], correct:0},
+  {id:'SR12', weight:2, prompt:'The square shrinks by a fixed amount each step. What comes next?',
+    sequence:[{type:'square',size:48},{type:'square',size:40},{type:'square',size:32}],
+    options:[{type:'square',size:24},{type:'square',size:32},{type:'square',size:40},{type:'circle',size:24}], correct:0}
+];
+
+/* Working memory items are generated fresh each run (see generateMemorySet). */
+
+/* ---------- Build a randomized test set each attempt ---------- */
+function drawFive(bank){
+  return shuffle(bank).slice(0,5);
+}
+function shuffleMcqOptions(q){
+  const idxs = shuffle(q.options.map((_,i)=>i));
+  const newOptions = idxs.map(i=>q.options[i]);
+  const newCorrect = idxs.indexOf(q.correct);
+  return Object.assign({}, q, {options:newOptions, correct:newCorrect});
+}
+function generateMemorySet(){
+  const specs = [
+    {len:4, weight:1, reverse:false},
+    {len:5, weight:1, reverse:false},
+    {len:6, weight:2, reverse:false},
+    {len:6, weight:2, reverse:true},
+    {len:7, weight:3, reverse:false}
+  ];
+  return specs.map((s,i)=>({
+    id:'MEM'+i, kind:'memory', category:'Working Memory', weight:s.weight,
+    digits:randDigits(s.len), reverse:s.reverse
+  }));
+}
+function buildTestSet(aiMode){
+  const AI_CATS = ['Logical Reasoning','Numerical Reasoning','Verbal Reasoning'];
+  function makeSlot(bank, category){
+    if(aiMode && AI_CATS.includes(category)){
+      const arr = [];
+      for(let i=0;i<5;i++) arr.push({kind:'pending', category, id:'PEND-'+category.replace(/\s+/g,'')+'-'+i});
+      return arr;
+    }
+    return drawFive(bank).map(shuffleMcqOptions).map(q=>Object.assign({},q,{kind:'mcq',category}));
+  }
+  const logical = makeSlot(BANK_LOGICAL, 'Logical Reasoning');
+  const numerical = makeSlot(BANK_NUMERICAL, 'Numerical Reasoning');
+  const verbal = makeSlot(BANK_VERBAL, 'Verbal Reasoning');
+  const spatial = drawFive(BANK_SPATIAL).map(shuffleMcqOptions).map(q=>Object.assign({},q,{kind:'shape',category:'Spatial Reasoning'}));
+  const memory = generateMemorySet();
+  return shuffle([...logical, ...numerical, ...verbal, ...spatial, ...memory]);
+}
+
+/* ---------- Adaptive AI question generation ----------
+   Calls a Netlify serverless function (netlify/functions/generate-question.js)
+   which holds the real Anthropic API key server-side. If the function isn't
+   deployed/configured, or the call fails or times out, this falls back to a
+   curated question from the static bank so the test never breaks. Only the
+   three text-based domains (Logical/Numerical/Verbal) use AI generation —
+   Spatial and Working Memory stay procedural/curated, since those need
+   precise structural or timing control an LLM can't reliably guarantee. */
+const AI_BANK_MAP = { 'Logical Reasoning':BANK_LOGICAL, 'Numerical Reasoning':BANK_NUMERICAL, 'Verbal Reasoning':BANK_VERBAL };
+
+async function fetchAIQuestion(category, difficulty){
+  const TIMEOUT_MS = 8000;
+  try{
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), TIMEOUT_MS);
+    const resp = await fetch('/.netlify/functions/generate-question', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ category, difficulty, avoid: APP.aiUsedPrompts.slice(-8) })
+    , signal: controller.signal});
+    clearTimeout(timer);
+    if(!resp.ok) throw new Error('AI function responded with status '+resp.status);
+    const data = await resp.json();
+    if(!data || typeof data.prompt !== 'string' || !Array.isArray(data.options) || data.options.length !== 4 ||
+       !Number.isInteger(data.correctIndex) || data.correctIndex < 0 || data.correctIndex > 3){
+      throw new Error('Malformed AI question payload');
+    }
+    APP.aiUsedPrompts.push(data.prompt);
+    return { id:'AI-'+Date.now()+'-'+randInt(100,999), kind:'mcq', category, weight:difficulty,
+              prompt:data.prompt, options:data.options, correct:data.correctIndex, isAI:true };
+  }catch(e){
+    console.warn('AI question generation failed — using a curated fallback:', e);
+    APP.aiFallbackHappened = true;
+    return pickFallbackQuestion(category, difficulty);
+  }
+}
+function pickFallbackQuestion(category, difficulty){
+  const bank = AI_BANK_MAP[category] || [];
+  const usedIds = APP.testSet.filter(q=>q && q.id).map(q=>q.id);
+  let byDifficulty = bank.filter(q=>q.weight===difficulty && !usedIds.includes(q.id));
+  let candidates = byDifficulty.length ? byDifficulty : bank.filter(q=>!usedIds.includes(q.id));
+  if(!candidates.length) candidates = bank;
+  const pick = shuffleMcqOptions(shuffle(candidates)[0]);
+  return Object.assign({}, pick, {kind:'mcq', category, isAI:false, aiFallback:true});
+}
+
+/* ---------- IQ mapping curve (percentage correct -> IQ estimate) ---------- */
+const CURVE = [[0,60],[10,70],[20,78],[30,85],[40,92],[50,100],[60,107],[70,114],[80,121],[90,130],[100,145]];
+function pctToIQ(pct){
+  for(let i=0;i<CURVE.length-1;i++){
+    const [p1,v1]=CURVE[i], [p2,v2]=CURVE[i+1];
+    if(pct>=p1 && pct<=p2){
+      const t=(pct-p1)/(p2-p1);
+      return Math.round(v1 + t*(v2-v1));
+    }
+  }
+  return pct<=0?60:145;
+}
+/* Light-touch age adjustment. Not a rigorous norm table — just a gentle
+   nudge acknowledging that raw puzzle-speed performance trends differ
+   modestly across age bands, offset by experience and vocabulary gains. */
+function ageAdjustment(age){
+  if(!age || isNaN(age)) return 0;
+  if(age < 16) return -3;
+  if(age <= 25) return 1;
+  if(age <= 35) return 2;
+  if(age <= 45) return 0;
+  if(age <= 60) return -2;
+  return -4;
+}
+function bandForScore(score){
+  if(score<70) return 'Well Below Average';
+  if(score<80) return 'Below Average';
+  if(score<90) return 'Low Average';
+  if(score<110) return 'Average';
+  if(score<120) return 'High Average';
+  if(score<130) return 'Superior';
+  return 'Very Superior';
+}
+
+/* ---------- Recommendations ---------- */
+const TIPS = {
+  'Logical Reasoning': [
+    'Spend 10 minutes a day on logic-grid puzzles or Sudoku to build deductive muscle.',
+    'Next time you read an argument (an article, an ad), try to name its hidden assumption.',
+    'Chess or strategy games are a fun way to practise if-then thinking under pressure.'
+  ],
+  'Numerical Reasoning': [
+    'Try quick mental-math drills — doubling, percentages, rough estimates — for a few minutes daily.',
+    'Number-sequence and pattern puzzles (like those in this test) sharpen the same muscle with repetition.',
+    'When a bill or discount comes up in daily life, estimate the answer in your head before checking.'
+  ],
+  'Verbal Reasoning': [
+    'Read outside your usual genre for a week — new vocabulary sticks fastest in unfamiliar contexts.',
+    'Crosswords or word-association games build the same analogy and synonym instincts tested here.',
+    'Pick up 2–3 new words a week and actually use them in a sentence that day.'
+  ],
+  'Spatial Reasoning': [
+    'Jigsaws, tangrams, or block-based puzzle apps directly train the pattern-completion skill tested here.',
+    'Try sketching an everyday object from a different angle than you usually see it.',
+    'Mental-rotation apps (rotate a 3D shape in your head before checking) build this fast.'
+  ],
+  'Working Memory': [
+    'Practise digit span the way this test does it — add one digit at a time as you improve.',
+    'Try recalling a grocery list without writing it down, then check yourself at the store.',
+    '"N-back" style memory games are built specifically to stretch working memory capacity.'
+  ]
+};
+function pickTip(cat){
+  const arr = TIPS[cat] || [];
+  return arr[randInt(0, arr.length-1)];
+}
+
+/* ---------- Cognitive Archetype ----------
+   Derived from whichever two domains scored highest. If no domain
+   stands out (scores are all close together), a "Versatile Mind"
+   archetype is used instead — this isn't a fixed personality label,
+   just a readable way to describe today's profile shape. */
+const DOMAIN_SHORT = {
+  'Logical Reasoning':'Logic','Numerical Reasoning':'Numbers','Verbal Reasoning':'Words',
+  'Spatial Reasoning':'Spatial','Working Memory':'Memory'
+};
+const ARCHETYPES = {
+  'BALANCED': { icon:'🌈', name:'The Versatile Mind',
+    tagline:'No single domain runs away with it — genuine range across the board.',
+    desc:'Your five scores sit close together rather than spiking in one place. That pattern often shows up in people who adapt well across very different kinds of problems — generalists who can hold their own in a numbers conversation, a spatial one, and a verbal one in the same afternoon, rather than specialists with one standout lane.' },
+  'Logic+Memory': { icon:'🧭', name:'The Methodical Mind',
+    tagline:'Systematic and deliberate — you build conclusions step by step.',
+    desc:'You tend to reason carefully rather than jump to conclusions, and you hold onto detail well enough to use it again later. In practice this often looks like double-checking before committing, and unusually good recall of a decision\'s reasoning days after it was made.' },
+  'Logic+Numbers': { icon:'🏗️', name:'The Systems Architect',
+    tagline:'You default to structure, and quantitative reasoning feels natural.',
+    desc:'Faced with a messy problem, you tend to break it into component parts before trying to solve it — and numbers are a comfortable language rather than an obstacle. This pairing shows up often among people who enjoy debugging, modeling, or any work where well-applied rules beat gut instinct.' },
+  'Logic+Spatial': { icon:'🧩', name:'The Pattern Architect',
+    tagline:'You spot structure fast, whether it\'s an argument or a shape.',
+    desc:'Hidden assumptions in an argument and the next shape in a sequence get noticed the same way — as structure to be uncovered. This combination tends to favor people who think in systems and diagrams, with an instinct to sketch a relationship out before describing it in words.' },
+  'Logic+Words': { icon:'♟️', name:'The Strategist',
+    tagline:'Clean reasoning, put into words that land.',
+    desc:'You reason in a straight line and can translate that reasoning into language that persuades — a combination that shows up often in negotiation, persuasive writing, and any role where the argument matters as much as the conclusion.' },
+  'Memory+Numbers': { icon:'🧽', name:'The Data Sponge',
+    tagline:'Numeric detail sticks, and stays useful.',
+    desc:'Specific figures, dates, and scores tend to stay with you well after everyone else has forgotten them, and you can hold several numbers in mind at once while reasoning about them — a useful trait anywhere precision under pressure matters.' },
+  'Memory+Spatial': { icon:'🗺️', name:'The Mental Cartographer',
+    tagline:'You build and hold detailed mental maps easily.',
+    desc:'Whether it\'s literal navigation or a mental model of how a system\'s pieces fit together, you tend to retain the layout rather than needing to look it up again — a trait that shows up in everything from wayfinding to remembering exactly how a process is structured.' },
+  'Memory+Words': { icon:'🗣️', name:'The Verbal Strategist',
+    tagline:'Language and recall reinforce each other for you.',
+    desc:'Vocabulary sticks, and you\'re likely to remember exactly how something was phrased — not just what it meant. That combination tends to make you a precise communicator, especially in writing or negotiation where exact wording matters.' },
+  'Numbers+Spatial': { icon:'⚙️', name:'The Engineer\'s Mind',
+    tagline:'You think in quantities and shapes at the same time.',
+    desc:'This pairing is common among people who enjoy visualizing how a system will behave before they\'ve run the numbers on it — a useful instinct for design, engineering, or any hands-on technical problem-solving.' },
+  'Numbers+Words': { icon:'📊', name:'The Analyst-Communicator',
+    tagline:'Comfortable with the numbers, comfortable narrating them.',
+    desc:'You\'re equally at ease with the underlying data and with turning it into a story other people can act on — a combination that shows up often in analytics, strategy, and reporting roles where insight only matters once someone else understands it too.' },
+  'Spatial+Words': { icon:'🎨', name:'The Visual Storyteller',
+    tagline:'Structural imagination, described vividly.',
+    desc:'You tend to notice spatial and structural patterns and then describe them in vivid, concrete language rather than abstraction — a combination that shows up often in design, teaching, and any work where a complex idea needs a clear picture.' }
+};
+function computeArchetype(ranked){
+  const spread = ranked[0].pct - ranked[ranked.length-1].pct;
+  if(spread < 15) return ARCHETYPES['BALANCED'];
+  const pair = [ranked[0].cat, ranked[1].cat].map(c=>DOMAIN_SHORT[c]).sort();
+  return ARCHETYPES[pair.join('+')] || ARCHETYPES['BALANCED'];
+}
+
+/* ---------- Shareable result card (canvas -> PNG) ---------- */
+async function buildResultCardDataURL(name, iq, band, archetypeName){
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200; canvas.height = 630;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,1200,630);
+  grad.addColorStop(0,'#0F131A');
+  grad.addColorStop(1,'#1B2331');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,1200,630);
+
+  // faint decorative rings
+  ctx.strokeStyle = 'rgba(201,162,39,0.18)';
+  ctx.lineWidth = 2;
+  for(let r=80; r<=760; r+=170){
+    ctx.beginPath(); ctx.arc(1020, 120, r, 0, Math.PI*2); ctx.stroke();
+  }
+
+  try{
+    await Promise.all([
+      document.fonts.load('700 120px Fraunces'),
+      document.fonts.load('600 30px "IBM Plex Mono"'),
+      document.fonts.load('600 40px Inter')
+    ]);
+  }catch(e){}
+
+  ctx.fillStyle = '#C9A227';
+  ctx.font = '600 24px "IBM Plex Mono", monospace';
+  ctx.fillText('MINDIQ · COGNITIVE SNAPSHOT', 80, 100);
+
+  ctx.fillStyle = '#EDEAE0';
+  ctx.font = '700 200px Fraunces, serif';
+  ctx.fillText(String(iq), 76, 380);
+
+  ctx.fillStyle = '#4FB6AE';
+  ctx.font = '600 30px "IBM Plex Mono", monospace';
+  ctx.fillText(band.toUpperCase(), 80, 430);
+
+  ctx.fillStyle = '#EDEAE0';
+  ctx.font = '600 42px Inter, sans-serif';
+  ctx.fillText(name, 80, 480);
+
+  if(archetypeName){
+    ctx.fillStyle = '#E8C24A';
+    ctx.font = 'italic 500 26px Fraunces, serif';
+    ctx.fillText(archetypeName, 80, 522);
+  }
+
+  ctx.fillStyle = '#8B94A3';
+  ctx.font = '400 20px Inter, sans-serif';
+  const d = new Date();
+  ctx.fillText(`Assessed ${d.toLocaleDateString()}`, 80, 565);
+
+  return canvas.toDataURL('image/png');
+}
+async function downloadResultCard(name, iq, band, archetypeName){
+  const url = await buildResultCardDataURL(name, iq, band, archetypeName);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mindiq-${name.replace(/\s+/g,'-').toLowerCase()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/* ---------- Leaderboard (Firebase if configured, else local) ---------- */
+/* When the same name appears more than once, entries are labeled by
+   attempt order (Attempt 1, Attempt 2, ...) rather than showing as
+   unlabeled duplicates. */
+async function getAttemptNumber(name){
+  if(firebaseEnabled){
+    try{
+      const snap = await db.collection('mindiqLeaderboard').where('name','==',name).get();
+      return snap.size + 1;
+    }catch(e){ console.warn('Attempt lookup failed:', e); return 1; }
+  }
+  try{
+    const list = JSON.parse(localStorage.getItem('mindiqLeaderboard') || '[]');
+    return list.filter(e=>e.name===name).length + 1;
+  }catch(e){ return 1; }
+}
+async function saveToLeaderboard(entry){
+  entry.attempt = await getAttemptNumber(entry.name);
+  if(firebaseEnabled){
+    db.collection('mindiqLeaderboard').add(entry).catch(e=>console.warn('Leaderboard save failed:', e));
+  } else {
+    try{
+      const list = JSON.parse(localStorage.getItem('mindiqLeaderboard') || '[]');
+      list.push(entry);
+      localStorage.setItem('mindiqLeaderboard', JSON.stringify(list));
+    }catch(e){ console.warn(e); }
+  }
+  return entry.attempt;
+}
+function loadLeaderboardData(callback){
+  const CAP = 500; // safety cap on how many scores we pull for percentile math
+  if(firebaseEnabled){
+    db.collection('mindiqLeaderboard').orderBy('iq','desc').limit(CAP).get()
+      .then(snap => {
+        const all = snap.docs.map(d=>d.data());
+        callback({ top10: all.slice(0,10), allIQs: all.map(e=>e.iq), total: all.length, capped: all.length>=CAP, local:false });
+      })
+      .catch(e => { console.warn('Leaderboard load failed:', e); callback({ top10:[], allIQs:[], total:0, capped:false, local:false }); });
+  } else {
+    try{
+      const list = JSON.parse(localStorage.getItem('mindiqLeaderboard') || '[]');
+      list.sort((a,b)=>b.iq-a.iq);
+      callback({ top10: list.slice(0,10), allIQs: list.map(e=>e.iq), total: list.length, capped:false, local:true });
+    }catch(e){ callback({ top10:[], allIQs:[], total:0, capped:false, local:true }); }
+  }
+}
+/* Midpoint percentile: counts ties as half-credit so a tied score
+   doesn't get an unfairly high or low percentile. */
+function computePercentile(allIQs, myIQ){
+  if(!allIQs.length) return null;
+  const lower = allIQs.filter(x=>x<myIQ).length;
+  const equal = allIQs.filter(x=>x===myIQ).length;
+  return ((lower + 0.5*equal) / allIQs.length) * 100;
+}
+
+/* ---------- Progress over time (this name's own attempt history) ---------- */
+function fetchUserHistory(name, callback){
+  if(firebaseEnabled){
+    db.collection('mindiqLeaderboard').where('name','==',name).get()
+      .then(snap => {
+        const list = snap.docs.map(d=>d.data());
+        list.sort((a,b)=>(a.ts||0)-(b.ts||0));
+        callback(list);
+      })
+      .catch(e => { console.warn('History load failed:', e); callback([]); });
+  } else {
+    try{
+      const list = JSON.parse(localStorage.getItem('mindiqLeaderboard') || '[]').filter(e=>e.name===name);
+      list.sort((a,b)=>(a.ts||0)-(b.ts||0));
+      callback(list);
+    }catch(e){ callback([]); }
+  }
+}
+function progressChartSVG(history){
+  const w=460, h=140, padL=32, padR=15, padT=15, padB=24;
+  const iqs = history.map(h=>h.iq);
+  const minIQ = Math.min(...iqs, 90) - 6;
+  const maxIQ = Math.max(...iqs, 110) + 6;
+  const n = history.length;
+  const stepX = n>1 ? (w-padL-padR)/(n-1) : 0;
+  const xFor = i => padL + i*stepX;
+  const yFor = v => padT + (1 - (v-minIQ)/(maxIQ-minIQ)) * (h-padT-padB);
+  let gridLines = '';
+  [minIQ, (minIQ+maxIQ)/2, maxIQ].forEach(v=>{
+    const y = yFor(v);
+    gridLines += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w-padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+      <text x="2" y="${(y+3).toFixed(1)}" fill="var(--text-dim)" font-size="9" font-family="IBM Plex Mono, monospace">${Math.round(v)}</text>`;
+  });
+  const points = history.map((hh,i)=>`${xFor(i).toFixed(1)},${yFor(hh.iq).toFixed(1)}`).join(' ');
+  const dots = history.map((hh,i)=>`<circle cx="${xFor(i).toFixed(1)}" cy="${yFor(hh.iq).toFixed(1)}" r="4" fill="var(--accent-bright)" stroke="var(--surface)" stroke-width="1.5"/>`).join('');
+  const labels = history.map((hh,i)=>`<text x="${xFor(i).toFixed(1)}" y="${h-6}" fill="var(--text-dim)" font-size="9" font-family="IBM Plex Mono, monospace" text-anchor="middle">#${i+1}</text>`).join('');
+  return `
+    <svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
+      ${gridLines}
+      <polyline points="${points}" fill="none" stroke="var(--accent-bright)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+      ${labels}
+    </svg>
+  `;
+}
+function renderProgress(history){
+  const panel = document.getElementById('progressPanel');
+  if(!panel) return;
+  if(history.length < 2){
+    panel.innerHTML = `<div class="lb-empty">This is your first recorded attempt — take MindIQ again later to see your trend build here.</div>`;
+    return;
+  }
+  const first = history[0].iq, last = history[history.length-1].iq;
+  const delta = last - first;
+  const deltaText = delta > 0 ? `+${delta}` : `${delta}`;
+  const deltaColor = delta > 0 ? 'var(--teal)' : (delta < 0 ? 'var(--coral)' : 'var(--text-dim)');
+  panel.innerHTML = `
+    <div class="percentile-headline">Across ${history.length} attempts, your score has moved <strong style="color:${deltaColor}">${deltaText} points</strong> since your first try.</div>
+    ${progressChartSVG(history)}
+    <div class="percentile-note">Each point is one full MindIQ attempt, oldest to most recent.</div>
+  `;
+}
+
+/* ---------- confetti burst ---------- */
+function fireConfetti(){
+  const colors = ['#C9A227','#4FB6AE','#E2695A','#EDEAE0'];
+  for(let i=0;i<28;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.left = Math.random()*100+'vw';
+    el.style.background = colors[randInt(0,colors.length-1)];
+    el.style.animationDuration = (2.2+Math.random()*1.4)+'s';
+    el.style.borderRadius = Math.random()>0.5 ? '50%' : '2px';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 4000);
+  }
+}
+
+/* ---------- animated count-up ---------- */
+function animateCount(el, target, duration=1100){
+  const start = performance.now();
+  function step(now){
+    const t = Math.min(1, (now-start)/duration);
+    const eased = 1 - Math.pow(1-t, 3);
+    el.textContent = Math.round(eased*target);
+    if(t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ---------- Rendering ---------- */
+const stage = document.getElementById('stage');
+
+function renderIntro(){
+  paintFloaters();
+  const chips = CATEGORY_ORDER.map(c=>`<div class="domain-chip"><span class="ic">${categoryIcon(c,15)}</span>${c}</div>`).join('');
+  stage.innerHTML = `
+    <div class="eyebrow">Personal IQ Calculator</div>
+    <h1 class="display"><span class="logo-mark">${logoSVG(38)}</span>MindIQ</h1>
+    <div class="hero-wrap">${heroNetworkSVG()}</div>
+    <p class="sub">Five domains of reasoning — logical, numerical, verbal, spatial, and memory — combine into a single score, then get broken back down at the end so you can see exactly where it came from.</p>
+    <div class="domain-strip">${chips}</div>
+    <div class="link-line">Curious how these scores are conventionally calculated? <a href="https://en.wikipedia.org/wiki/Intelligence_quotient" target="_blank" rel="noopener">A quick primer on IQ scoring ↗</a></div>
+
+    <div class="panel">
+      <div class="field-row">
+        <div>
+          <label class="field-label">Your name</label>
+          <input type="text" id="nameInput" placeholder="e.g. Sandeep" autocomplete="off" />
+        </div>
+        <div>
+          <label class="field-label">Your age</label>
+          <input type="number" id="ageInput" placeholder="e.g. 34" min="5" max="110" />
+        </div>
+      </div>
+      <label class="ai-toggle" for="aiModeToggle">
+        <input type="checkbox" id="aiModeToggle" />
+        <div>
+          <div class="ai-toggle-title">🤖 Use Adaptive AI Questions <span class="ai-badge">Beta</span></div>
+          <div class="ai-toggle-sub">Logic, numbers, and word questions are generated live and get harder or easier as you go. Requires the included Netlify function + your own Anthropic API key — automatically falls back to the curated question bank if that isn't set up yet.</div>
+        </div>
+      </label>
+      <button class="btn-primary" id="startBtn" disabled>Start the Test →</button>
+      <div class="note">MindIQ is built for self-insight and fun — a snapshot of how you did today, not a permanent label. Sleep, mood, and practice all nudge results up or down. The scoring curve follows the common convention used by popular online aptitude tests, where average performance centers around 100.</div>
+    </div>
+
+    <div class="section-title">💡 What Insight Can This Actually Give You?</div>
+    <div class="panel">
+      <ul class="insight-list">
+        <li><strong>Relative strengths, not just a number.</strong> The real value is in the breakdown — where you're clearly stronger than average, and where you're not.</li>
+        <li><strong>A repeatable benchmark.</strong> Taken again in a few weeks or months, it can show whether focused practice in one domain actually moved the needle.</li>
+        <li><strong>A window into your problem-solving style.</strong> Some people move fast on patterns and slow on words, or the reverse — the domain split shows which is true for you.</li>
+        <li><strong>One data point, not the whole picture.</strong> It says nothing about creativity, emotional intelligence, practical judgment, or real-world skill — those need other kinds of evidence entirely.</li>
+        <li><strong>Sensitive to the day, not just the person.</strong> Sleep, stress, mood, and familiarity with this style of question all shift the number — a single sitting is a snapshot, not a verdict.</li>
+        <li><strong>Most useful with reflection.</strong> Compare it against how the sections actually felt to you — surprises are often more informative than the score itself.</li>
+      </ul>
+    </div>
+    ${footerHTML()}
+  `;
+  const nameInput = document.getElementById('nameInput');
+  const ageInput = document.getElementById('ageInput');
+  const btn = document.getElementById('startBtn');
+  const checkReady = ()=>{ btn.disabled = !(nameInput.value.trim().length>0 && ageInput.value); };
+  nameInput.addEventListener('input', checkReady);
+  ageInput.addEventListener('input', checkReady);
+  nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter' && !btn.disabled) startTest(); });
+  ageInput.addEventListener('keydown', e=>{ if(e.key==='Enter' && !btn.disabled) startTest(); });
+  btn.addEventListener('click', startTest);
+  nameInput.focus();
+}
+
+function startTest(){
+  APP.name = document.getElementById('nameInput').value.trim() || 'Friend';
+  APP.age = parseInt(document.getElementById('ageInput').value, 10) || null;
+  APP.currentIndex = 0;
+  APP.answers = [];
+  const aiToggle = document.getElementById('aiModeToggle');
+  APP.aiMode = !!(aiToggle && aiToggle.checked);
+  APP.aiDifficulty = { 'Logical Reasoning':2, 'Numerical Reasoning':2, 'Verbal Reasoning':2 };
+  APP.aiUsedPrompts = [];
+  APP.aiFallbackHappened = false;
+  APP.testSet = buildTestSet(APP.aiMode);
+  APP.startTime = Date.now();
+  renderQuestion();
+}
+
+function renderRail(){
+  let ticks = '';
+  APP.testSet.forEach((q,i)=>{
+    let cls = 'tick';
+    if(i < APP.currentIndex) cls += ' done';
+    else if(i === APP.currentIndex) cls += ' current';
+    ticks += `<div class="${cls}"></div>`;
+  });
+  const pct = Math.round((APP.currentIndex/APP.testSet.length)*100);
+  return `<div class="rail">${ticks}</div><div class="rail-pct">${pct}% complete</div>`;
+}
+
+function renderQuestion(){
+  const q = APP.testSet[APP.currentIndex];
+
+  if(q.kind === 'pending'){
+    stage.innerHTML = `
+      ${renderRail()}
+      ${challengeBannerHTML()}
+      <div class="qcard">
+        <div class="meta-row">
+          <span class="catlabel">${categoryIcon(q.category,14)} ${q.category}</span>
+          <span class="qnum">ITEM ${APP.currentIndex+1} / ${APP.testSet.length}</span>
+        </div>
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <div class="loading-text">Generating an adaptive question…</div>
+        </div>
+      </div>
+    `;
+    resolvePendingQuestion(q);
+    return;
+  }
+
+  let body = '';
+
+  if(q.kind === 'mcq'){
+    body = `<div class="options">` + q.options.map((opt,i)=>
+      `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${opt}</button>`
+    ).join('') + `</div>`;
+  } else if(q.kind === 'shape'){
+    const seq = q.sequence.map(s=>shapeSVG(s.type,{size:s.size||48,fill:s.fill||'none',rotate:s.rotate||0})).join('<span class="arrow-sep">→</span>');
+    const questionMark = `<svg width="48" height="48" viewBox="0 0 48 48" style="background:var(--surface-2);border:1px solid var(--border);border-radius:3px;">
+      <text x="24" y="32" fill="var(--text-dim)" font-size="24" font-family="IBM Plex Mono, monospace" text-anchor="middle">?</text>
+    </svg>`;
+    body = `
+      <div class="shape-grid">${seq}<span class="arrow-sep">→</span>${questionMark}</div>
+      <div class="options">` + q.options.map((opt,i)=>
+        `<button class="option" data-idx="${i}"><span class="tag">${String.fromCharCode(65+i)}</span>${shapeSVG(opt.type,{size:opt.size||48,fill:opt.fill||'none',rotate:opt.rotate||0})}</button>`
+      ).join('') + `</div>`;
+  } else if(q.kind === 'memory'){
+    const label = q.reverse ? 'Memorize the sequence — you will enter it in REVERSE order' : 'Memorize the sequence — you will enter it in the same order';
+    body = `
+      <div class="memory-status" id="memStatus">${label}</div>
+      <div class="timer-bar"><div class="timer-fill" id="memTimerFill"></div></div>
+      <div class="memory-display" id="memDisplay">${q.digits.split('').join(' ')}</div>
+      <div id="memInputArea" class="hidden">
+        <label class="field-label">${q.reverse ? 'Type the sequence in reverse' : 'Type the sequence you saw'}</label>
+        <input type="tel" id="memInput" autocomplete="off" placeholder="e.g. 1234" />
+        <button class="btn-primary" id="memSubmit">Submit</button>
+      </div>
+    `;
+  }
+
+  const badge = q.isAI ? `<span class="ai-badge">🤖 AI-generated · L${q.weight}</span>`
+              : (q.aiFallback ? `<span class="ai-badge fallback">Curated fallback</span>` : '');
+
+  stage.innerHTML = `
+    ${renderRail()}
+    ${challengeBannerHTML()}
+    <div class="qcard">
+      <div class="meta-row">
+        <span class="catlabel">${categoryIcon(q.category,14)} ${q.category}${badge}</span>
+        <span class="qnum">ITEM ${APP.currentIndex+1} / ${APP.testSet.length}</span>
+      </div>
+      <div class="prompt">${q.kind==='memory' ? 'Working memory check' : q.prompt}</div>
+      ${body}
+    </div>
+  `;
+
+  if(q.kind === 'mcq' || q.kind === 'shape'){
+    stage.querySelectorAll('.option').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const idx = parseInt(btn.dataset.idx,10);
+        const correct = idx === q.correct;
+        if(q.kind === 'mcq'){
+          recordAnswer(q, {correct, chosenText:q.options[idx], correctText:q.options[q.correct]});
+        } else {
+          recordAnswer(q, {correct, chosenVisual:q.options[idx], correctVisual:q.options[q.correct]});
+        }
+        advance();
+      });
+    });
+  } else if(q.kind === 'memory'){
+    const display = document.getElementById('memDisplay');
+    const status = document.getElementById('memStatus');
+    const inputArea = document.getElementById('memInputArea');
+    const timerFill = document.getElementById('memTimerFill');
+    const revealMs = 900 + q.digits.length*750;
+    timerFill.style.transition = `transform ${revealMs}ms linear`;
+    requestAnimationFrame(()=>{ timerFill.style.transform = 'scaleX(0)'; });
+    setTimeout(()=>{
+      display.classList.add('hidden');
+      status.textContent = 'Now enter what you saw';
+      inputArea.classList.remove('hidden');
+      const input = document.getElementById('memInput');
+      input.focus();
+      const submit = ()=>{
+        const val = input.value.trim();
+        const target = q.reverse ? q.digits.split('').reverse().join('') : q.digits;
+        const correct = val === target;
+        recordAnswer(q, {correct, chosenText: val || '(no answer)', correctText: target});
+        advance();
+      };
+      document.getElementById('memSubmit').addEventListener('click', submit);
+      input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submit(); });
+    }, revealMs);
+  }
+}
+
+async function resolvePendingQuestion(q){
+  const resolved = await fetchAIQuestion(q.category, APP.aiDifficulty[q.category] || 2);
+  const idx = APP.testSet.indexOf(q);
+  if(idx === -1) return; // slot no longer present (shouldn't happen in linear flow)
+  APP.testSet[idx] = resolved;
+  if(idx === APP.currentIndex) renderQuestion();
+}
+
+function recordAnswer(q, payload){
+  const entry = Object.assign({
+    id:q.id, category:q.category, weight:q.weight,
+    kind:q.kind, prompt:q.prompt||null, isAI: !!q.isAI, aiFallback: !!q.aiFallback
+  }, payload);
+  APP.answers.push(entry);
+  const AI_CATS = ['Logical Reasoning','Numerical Reasoning','Verbal Reasoning'];
+  if(APP.aiMode && AI_CATS.includes(q.category)){
+    const d = APP.aiDifficulty[q.category] || 2;
+    APP.aiDifficulty[q.category] = payload.correct ? Math.min(3, d+1) : Math.max(1, d-1);
+  }
+}
+
+function advance(){
+  APP.currentIndex++;
+  if(APP.currentIndex >= APP.testSet.length){
+    renderResults();
+  } else {
+    renderQuestion();
+  }
+}
+
+/* ---------- Results ---------- */
+function computeResults(){
+  const catStats = {};
+  CATEGORY_ORDER.forEach(c => catStats[c] = {earned:0,total:0});
+  let earned=0, totalWeight=0;
+  APP.answers.forEach(a=>{
+    catStats[a.category].total += a.weight;
+    totalWeight += a.weight;
+    if(a.correct){ catStats[a.category].earned += a.weight; earned += a.weight; }
+  });
+  const overallPct = totalWeight ? (earned/totalWeight)*100 : 0;
+  let iq = pctToIQ(overallPct) + ageAdjustment(APP.age);
+  iq = Math.max(55, Math.min(160, iq));
+  const catPct = {};
+  CATEGORY_ORDER.forEach(c=>{
+    catPct[c] = catStats[c].total ? (catStats[c].earned/catStats[c].total)*100 : 0;
+  });
+  return {iq, overallPct, catPct};
+}
+
+function gaugeSVG(iq){
+  const min=55, max=150;
+  const clamped = Math.max(min, Math.min(max, iq));
+  const cx=150, cy=150, r=120;
+  const toAngle = v => -90 + ((v-min)/(max-min))*180;
+  const toPoint = (v, radius) => {
+    const a = toAngle(v) * Math.PI/180;
+    return [cx + radius*Math.cos(a), cy + radius*Math.sin(a)];
+  };
+  // Color-coded classification zones — same bands used in bandForScore(),
+  // drawn as a real speedometer instead of a single-color progress arc.
+  const zones = [
+    {from:min, to:70,  color:'var(--coral)'},
+    {from:70,  to:80,  color:'var(--zone-orange)'},
+    {from:80,  to:90,  color:'var(--zone-gold)'},
+    {from:90,  to:110, color:'var(--teal)'},
+    {from:110, to:120, color:'var(--dom-memory)'},
+    {from:120, to:130, color:'var(--dom-spatial)'},
+    {from:130, to:max, color:'var(--accent-bright)'}
+  ];
+  let zoneArcs = '';
+  zones.forEach(z=>{
+    const [x1,y1] = toPoint(z.from, r);
+    const [x2,y2] = toPoint(z.to, r);
+    zoneArcs += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${z.color}" stroke-width="13" stroke-linecap="butt" opacity="0.92"/>`;
+  });
+  let ticks = '';
+  for(let v=min; v<=max; v+=15){
+    const [x1,y1] = toPoint(v, r-9);
+    const [x2,y2] = toPoint(v, r+9);
+    ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--bg)" stroke-width="2.5"/>`;
+  }
+  const [nx,ny] = toPoint(clamped, r-28);
+  return `
+    <svg width="300" height="180" viewBox="0 0 300 170">
+      ${zoneArcs}
+      ${ticks}
+      <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--text)" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="8" fill="var(--text)"/>
+      <circle cx="${cx}" cy="${cy}" r="3.5" fill="var(--bg)"/>
+    </svg>
+  `;
+}
+
+function radarSVG(catPct){
+  const cats = CATEGORY_ORDER;
+  const n = cats.length;
+  const cx=150, cy=150, r=108;
+  let gridRings = '';
+  [0.25,0.5,0.75,1].forEach(f=>{
+    let pts = [];
+    for(let i=0;i<n;i++){
+      const a = (Math.PI*2*i/n) - Math.PI/2;
+      pts.push(`${(cx+r*f*Math.cos(a)).toFixed(1)},${(cy+r*f*Math.sin(a)).toFixed(1)}`);
+    }
+    gridRings += `<polygon points="${pts.join(' ')}" fill="none" stroke="var(--border)" stroke-width="1"/>`;
+  });
+  let axes = '', labels = '', dataPts = [], vertexDots = '';
+  cats.forEach((c,i)=>{
+    const a = (Math.PI*2*i/n) - Math.PI/2;
+    const x2 = cx + r*Math.cos(a), y2 = cy + r*Math.sin(a);
+    const color = DOMAIN_COLOR[c];
+    axes += `<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+    const lx = cx + (r+30)*Math.cos(a), ly = cy + (r+30)*Math.sin(a);
+    labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" fill="${color}" font-size="10" font-weight="600" font-family="IBM Plex Mono, monospace" text-anchor="middle">${c.split(' ')[0].toUpperCase()}</text>`;
+    const f = Math.max(0.08, (catPct[c]||0)/100);
+    const px = cx + r*f*Math.cos(a), py = cy + r*f*Math.sin(a);
+    dataPts.push(`${px.toFixed(1)},${py.toFixed(1)}`);
+    vertexDots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="1.5"/>`;
+  });
+  return `
+    <svg width="300" height="300" viewBox="0 0 300 300">
+      <defs>
+        <radialGradient id="radarFill" cx="50%" cy="50%" r="65%">
+          <stop offset="0%" style="stop-color:var(--accent-bright); stop-opacity:0.38"/>
+          <stop offset="100%" style="stop-color:var(--teal); stop-opacity:0.16"/>
+        </radialGradient>
+      </defs>
+      ${gridRings}${axes}
+      <polygon points="${dataPts.join(' ')}" fill="url(#radarFill)" stroke="var(--accent-bright)" stroke-width="2"/>
+      ${vertexDots}
+      ${labels}
+    </svg>
+  `;
+}
+
+function buildSummaryText(iq, band, ranked){
+  const top = ranked[0], bottom = ranked[ranked.length-1];
+  const bandPhrase = {
+    'Well Below Average':'a rough day at the puzzles',
+    'Below Average':'a bit off your usual pace',
+    'Low Average':'a solid, unremarkable pass',
+    'Average':'right in the typical range',
+    'High Average':'a notch above typical',
+    'Superior':'a genuinely strong showing',
+    'Very Superior':'an exceptional run'
+  }[band] || 'a solid effort';
+  return `${APP.name}, this was ${bandPhrase}. Your standout domain was <strong>${top.cat}</strong> at ${top.pct.toFixed(0)}%, which pulled the overall score up the most. <strong>${bottom.cat}</strong> came in lowest at ${bottom.pct.toFixed(0)}% — that's the single biggest lever for improvement next time you take MindIQ.`;
+}
+
+function renderResults(){
+  const {iq, catPct} = computeResults();
+  const band = bandForScore(iq);
+  const ranked = CATEGORY_ORDER.map(c=>({cat:c, pct:catPct[c]})).sort((a,b)=>b.pct-a.pct);
+  const strengths = ranked.slice(0,2);
+  const improvements = ranked.slice(-2).reverse();
+  const archetype = computeArchetype(ranked);
+  const catRows = CATEGORY_ORDER.map(c=>{
+    const pct = catPct[c];
+    const color = DOMAIN_COLOR[c];
+    return `
+      <div class="cat-row">
+        <div class="cat-name">${categoryIcon(c,15)} ${c}</div>
+        <div class="cat-bar-bg">
+          <div class="cat-benchmark" title="Typical average"></div>
+          <div class="cat-bar-fill" style="width:0%;background:${color}" data-target="${pct}"></div>
+        </div>
+        <div class="cat-pct" style="color:${color}">${pct.toFixed(0)}%</div>
+      </div>`;
+  }).join('');
+
+  const strengthCards = strengths.map(s=>`
+    <div class="insight-card">
+      <h4>Strength</h4>
+      <p><strong>${s.cat}</strong> — ${s.pct.toFixed(0)}% correct, the strongest of the five domains tested.</p>
+    </div>`).join('');
+  const improvementCards = improvements.map(s=>`
+    <div class="insight-card warn">
+      <h4>Growth Area</h4>
+      <p><strong>${s.cat}</strong> — ${s.pct.toFixed(0)}% correct. Sharpening this would lift the overall score the most.</p>
+    </div>`).join('');
+
+  const recRows = improvements.map(s=>`
+    <div class="tip-row">
+      <div class="tip-icon">${categoryIcon(s.cat,15)}</div>
+      <div class="tip-body"><strong>${s.cat}</strong><span>${pickTip(s.cat)}</span></div>
+    </div>`).join('') + `
+    <div class="tip-row">
+      <div class="tip-icon">✦</div>
+      <div class="tip-body"><strong>Keep leaning on ${strengths[0].cat}</strong><span>It's your strongest domain right now — a good one to lean on when tackling something new and unfamiliar.</span></div>
+    </div>`;
+
+  const elapsed = Math.round((Date.now()-APP.startTime)/1000);
+  const mins = Math.floor(elapsed/60), secs = elapsed%60;
+  const ageNote = APP.age ? ` · AGE-ADJUSTED FOR ${APP.age}` : '';
+  const missedCount = APP.answers.filter(a=>!a.correct).length;
+  const fallbackNote = APP.aiFallbackHappened
+    ? `<div class="ai-fallback-note">🤖 One or more AI-generated questions weren't available this run, so a curated question was used instead — nothing was skipped.</div>`
+    : '';
+
+  stage.innerHTML = `
+    <div class="brand-bar">${logoSVG(20)}<span class="brand-word">MindIQ</span></div>
+    <div class="eyebrow">Your Cognitive Snapshot</div>
+    <h1 class="display">${APP.name}'s Result</h1>
+    <p class="sub">Assessment complete — here's the full breakdown across all five domains.</p>
+    ${fallbackNote}
+
+    <div class="panel gauge-wrap">
+      ${gaugeSVG(iq)}
+      <div class="score-huge" id="scoreHuge">0</div>
+      <div class="score-band">${band}</div>
+      <div class="summary-text" id="summaryText"></div>
+      <div class="serial">TEST-ID ${genSerial()} · DURATION ${mins}m ${secs}s · ${APP.testSet.length} ITEMS${ageNote}</div>
+      <div class="actions">
+        <button class="btn-teal" id="downloadBtn">⬇ Download Result Card</button>
+        <button class="btn-ghost" id="retakeBtn">↻ Retake Assessment</button>
+      </div>
+      <div class="share-label">🤝 Challenge someone to beat your score</div>
+      <div class="share-row" id="shareRow"></div>
+    </div>
+
+    ${APP.challenge ? headToHeadHTML(APP.challenge, iq, archetype.name) : ''}
+
+    <div class="archetype-panel">
+      <div class="archetype-eyebrow">Your Cognitive Archetype</div>
+      <div class="archetype-icon">${archetype.icon}</div>
+      <div class="archetype-name">${archetype.name}</div>
+      <div class="archetype-tagline">${archetype.tagline}</div>
+      <p class="archetype-desc">${archetype.desc}</p>
+    </div>
+
+    <div class="section-title">📈 Where You Stand</div>
+    <div class="panel" id="percentilePanel">
+      <div class="lb-empty">Comparing against other MindIQ results…</div>
+    </div>
+
+    <div class="section-title">🗓️ Your Progress Over Time</div>
+    <div class="panel" id="progressPanel">
+      <div class="lb-empty">Loading your history…</div>
+    </div>
+
+    <div class="section-title">📊 Domain Breakdown</div>
+    <div class="panel">${catRows}</div>
+
+    <div class="section-title">🕸️ Cognitive Profile</div>
+    <div class="panel" style="display:flex;justify-content:center;">${radarSVG(catPct)}</div>
+
+    <div class="section-title">🔍 What Shaped the Score</div>
+    <div class="insight-grid">${strengthCards}${improvementCards}</div>
+
+    <div class="section-title">🌱 Your Growth Plan</div>
+    <div class="panel">${recRows}</div>
+
+    <div class="section-title">📝 Review Your Answers</div>
+    <div class="panel">
+      <div class="review-toggle-row">
+        <button class="review-filter active" id="filterAll">All (${APP.answers.length})</button>
+        <button class="review-filter" id="filterMissed">Missed Only (${missedCount})</button>
+        <button class="btn-ghost" id="toggleReviewBtn" style="margin-left:auto;">Show Review ▾</button>
+      </div>
+      <div id="reviewList" class="hidden"></div>
+    </div>
+
+    <div class="section-title">🏆 Leaderboard</div>
+    <div class="panel" id="leaderboardPanel">
+      <div class="lb-empty">Loading leaderboard…</div>
+    </div>
+
+    <div class="disclaimer">
+      This score is a self-assessment estimate, not an official measurement. It maps your difficulty-weighted percentage correct onto a curve inspired by common conventions used across popular online aptitude tests (average performance centers around 100), with a light adjustment for age. Treat it as a fun, directional signal rather than a fixed verdict — how you feel on the day, practice, and familiarity with this style of question all move the number.
+    </div>
+    ${footerHTML()}
+  `;
+
+  // animated fills
+  document.getElementById('scoreHuge').textContent = '0';
+  animateCount(document.getElementById('scoreHuge'), iq);
+  document.getElementById('summaryText').innerHTML = buildSummaryText(iq, band, ranked);
+  requestAnimationFrame(()=>{
+    stage.querySelectorAll('.cat-bar-fill').forEach(el=>{
+      el.style.width = el.dataset.target + '%';
+    });
+  });
+  fireConfetti();
+
+  document.getElementById('retakeBtn').addEventListener('click', renderIntro);
+
+  // answer review controls
+  const toggleReviewBtn = document.getElementById('toggleReviewBtn');
+  const reviewList = document.getElementById('reviewList');
+  const filterAllBtn = document.getElementById('filterAll');
+  const filterMissedBtn = document.getElementById('filterMissed');
+  let reviewShown = false;
+  const showReview = (mode)=>{
+    renderReviewList(mode);
+    reviewList.classList.remove('hidden');
+    reviewShown = true;
+    toggleReviewBtn.textContent = 'Hide Review ▴';
+  };
+  toggleReviewBtn.addEventListener('click', ()=>{
+    reviewShown = !reviewShown;
+    reviewList.classList.toggle('hidden', !reviewShown);
+    toggleReviewBtn.textContent = reviewShown ? 'Hide Review ▴' : 'Show Review ▾';
+    if(reviewShown) renderReviewList(filterMissedBtn.classList.contains('active') ? 'missed' : 'all');
+  });
+  filterAllBtn.addEventListener('click', ()=>{
+    filterAllBtn.classList.add('active'); filterMissedBtn.classList.remove('active');
+    showReview('all');
+  });
+  filterMissedBtn.addEventListener('click', ()=>{
+    filterMissedBtn.classList.add('active'); filterAllBtn.classList.remove('active');
+    showReview('missed');
+  });
+  document.getElementById('downloadBtn').addEventListener('click', ()=>downloadResultCard(APP.name, iq, band, archetype.name));
+
+  const challengeUrl = buildChallengeUrl(APP.name, iq, archetype.name, band);
+  const shareText = `${APP.name} scored ${iq} (${band}) on MindIQ — archetype: "${archetype.name}". Think you can beat it?`;
+  const shareRow = document.getElementById('shareRow');
+  shareRow.innerHTML = `
+    <a class="share-btn" target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(challengeUrl)}">${shareIcon('x')} Share</a>
+    <a class="share-btn" target="_blank" rel="noopener" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(challengeUrl)}">${shareIcon('linkedin')} LinkedIn</a>
+    <a class="share-btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText+' '+challengeUrl)}">${shareIcon('whatsapp')} WhatsApp</a>
+    <button class="share-btn" id="copyBtn">🔗 Copy Challenge Link</button>
+  `;
+  document.getElementById('copyBtn').addEventListener('click', ()=>{
+    navigator.clipboard.writeText(`${shareText} ${challengeUrl}`).then(()=>{
+      const btn = document.getElementById('copyBtn');
+      const original = btn.innerHTML;
+      btn.innerHTML = '✓ Copied';
+      setTimeout(()=>{ btn.innerHTML = original; }, 1800);
+    }).catch(()=>{});
+  });
+
+  // save this result, then load the leaderboard + live percentile + own history
+  saveToLeaderboard({name:APP.name, age:APP.age||null, iq, band, ts:Date.now()})
+    .then(()=> {
+      loadLeaderboardData(data => {
+        renderLeaderboard(data.top10, iq);
+        renderPercentile(data, iq);
+      });
+      fetchUserHistory(APP.name, renderProgress);
+    })
+    .catch(()=> {
+      loadLeaderboardData(data => {
+        renderLeaderboard(data.top10, iq);
+        renderPercentile(data, iq);
+      });
+      fetchUserHistory(APP.name, renderProgress);
+    });
+}
+
+function renderPercentile(data, myIQ){
+  const panel = document.getElementById('percentilePanel');
+  if(!panel) return;
+  const MIN_SAMPLE = 5;
+  if(data.total < MIN_SAMPLE){
+    panel.innerHTML = `<div class="lb-empty">Only ${data.total} MindIQ ${data.total===1?'result':'results'} recorded so far — not enough yet for a meaningful percentile. Check back once more people have taken it, or take it again later to track your own trend.</div>`;
+    return;
+  }
+  const pct = computePercentile(data.allIQs, myIQ);
+  const clampedPos = Math.max(2, Math.min(98, pct));
+  const scopeNote = data.local
+    ? `Based on your own ${data.total} attempt${data.total===1?'':'s'} on this device — connect Firebase in the code to compare against everyone else who's taken MindIQ.`
+    : `Calculated live from ${data.total}${data.capped ? '+' : ''} real MindIQ attempts — not a fixed table.`;
+  panel.innerHTML = `
+    <div class="percentile-headline">You scored higher than <strong>${pct.toFixed(0)}%</strong> of ${data.local ? 'your own attempts' : `the ${data.total} people who've taken MindIQ`}.</div>
+    <div class="percentile-track">
+      <div class="percentile-fill" style="width:${clampedPos}%"></div>
+      <div class="percentile-marker" style="left:${clampedPos}%"></div>
+    </div>
+    <div class="percentile-scale"><span>0</span><span>50</span><span>100</span></div>
+    <div class="percentile-note">${scopeNote}</div>
+  `;
+}
+
+/* ---------- Answer review ---------- */
+function reviewItemHTML(a, num){
+  const mark = a.correct ? '✓' : '✗';
+  const markClass = a.correct ? 'ok' : 'no';
+  let promptText = a.prompt;
+  let answersHTML = '';
+
+  if(a.kind === 'memory'){
+    promptText = `Working memory check — recall the ${a.correctText.length}-digit sequence`;
+    answersHTML = `<div class="review-answers">
+      <span class="${a.correct ? '' : 'yours'}">Your answer: ${a.chosenText}</span>
+      ${a.correct ? '' : `<span class="correct-ans">Correct: ${a.correctText}</span>`}
+    </div>`;
+  } else if(a.kind === 'shape'){
+    answersHTML = `<div class="review-visual-row">
+      <div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Yours</div>
+        ${shapeSVG(a.chosenVisual.type, {size:36, fill:a.chosenVisual.fill||'none', rotate:a.chosenVisual.rotate||0})}
+      </div>
+      ${a.correct ? '' : `<div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Correct</div>
+        ${shapeSVG(a.correctVisual.type, {size:36, fill:a.correctVisual.fill||'none', rotate:a.correctVisual.rotate||0})}
+      </div>`}
+    </div>`;
+  } else {
+    answersHTML = `<div class="review-answers">
+      <span class="${a.correct ? '' : 'yours'}">Your answer: ${a.chosenText}</span>
+      ${a.correct ? '' : `<span class="correct-ans">Correct: ${a.correctText}</span>`}
+    </div>`;
+  }
+
+  const srcTag = a.isAI ? '<span class="ai-badge">AI</span>' : (a.aiFallback ? '<span class="ai-badge fallback">Curated</span>' : '');
+
+  return `<div class="review-item">
+    <div class="review-mark ${markClass}">${mark}</div>
+    <div>
+      <div class="review-cat">${categoryIcon(a.category,13)} ${a.category} · #${num}${srcTag}</div>
+      <div class="review-prompt">${promptText}</div>
+      ${answersHTML}
+    </div>
+  </div>`;
+}
+function renderReviewList(mode){
+  const list = document.getElementById('reviewList');
+  if(!list) return;
+  const items = APP.answers
+    .map((a,i)=>({a, num:i+1}))
+    .filter(({a}) => mode==='missed' ? !a.correct : true);
+  if(!items.length){
+    list.innerHTML = `<div class="lb-empty">No missed questions — clean sweep! 🎉</div>`;
+    return;
+  }
+  list.innerHTML = items.map(({a,num})=>reviewItemHTML(a,num)).join('');
+}
+
+function renderLeaderboard(entries, myIQ){
+  const panel = document.getElementById('leaderboardPanel');
+  if(!panel) return;
+  if(!entries.length){
+    panel.innerHTML = `<div class="lb-empty">No entries yet — you're the first! Take it again later to see how you compare.</div>`;
+    return;
+  }
+  const rows = entries.map((e,i)=>{
+    const mine = e.name === APP.name && e.iq === myIQ;
+    const attemptTag = e.attempt && e.attempt > 1 ? `<span class="attempt-badge">Attempt ${e.attempt}</span>` : '';
+    return `<div class="lb-row ${mine?'me':''}">
+      <div class="lb-rank">#${i+1}</div>
+      <div class="lb-name">${e.name}${attemptTag}</div>
+      <div class="lb-age">${e.age ? 'age '+e.age : ''}</div>
+      <div class="lb-score">${e.iq}</div>
+    </div>`;
+  }).join('');
+  panel.innerHTML = rows + (firebaseEnabled
+    ? `<div class="lb-note">Shared leaderboard, synced live via Firebase.</div>`
+    : `<div class="lb-note">Local leaderboard only (this browser) — add a Firebase config in the code to share it with others.</div>`);
+}
+
+function genSerial(){
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${randInt(100,999)}`;
+}
+
+const incomingChallenge = parseChallengeFromURL();
+if(incomingChallenge){
+  renderChallengeScreen(incomingChallenge);
+} else {
+  renderIntro();
+}
+</script>
+</body>
+</html>
